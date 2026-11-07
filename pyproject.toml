@@ -1,0 +1,22 @@
+[project]
+name = "scenix16"
+version = "0.0.1"
+description = "SceniX16 – gestion des setlists et patchlists de concert (application Windows portable)"
+readme = "README.md"
+requires-python = ">=3.13,<3.16"
+dependencies = [
+    "PySide6-Essentials==6.12.0",
+    "openpyxl==3.1.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "pytest-qt==4.5.0",
+    "pyinstaller==6.22.3",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+qt_api = "pyside6"

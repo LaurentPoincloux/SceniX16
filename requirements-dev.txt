@@ -1,0 +1,6 @@
+# Outils de développement : tests et fabrication de l'exécutable portable
+-r requirements.txt
+pytest==9.2.0
+pytest-qt==4.5.0
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.9
