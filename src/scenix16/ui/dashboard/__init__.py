@@ -1,0 +1,1 @@
+"""Écran MAIN (dashboard)."""

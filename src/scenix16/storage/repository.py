@@ -12,6 +12,11 @@ from datetime import date
 from scenix16.domain.models import ConcertSummary, SetlistStatus
 
 
+def count_tracks(connection: sqlite3.Connection) -> int:
+    """Nombre de morceaux dans la bibliothèque (TRACKS)."""
+    return connection.execute("SELECT count(*) FROM tracks").fetchone()[0]
+
+
 def read_concert_summaries(connection: sqlite3.Connection) -> list[ConcertSummary]:
     rows = connection.execute(
         """

@@ -51,8 +51,14 @@ FONT_UI = ["Segoe UI Variable Text", "Segoe UI"]
 FONT_LABEL = ["Barlow Semi Condensed", "Segoe UI"]
 FONT_MONO = ["IBM Plex Mono", "Cascadia Mono", "Consolas"]
 
+# NEW SETLIST tant qu'il est inactif : identité orange sans aplat (contraste 5,37:1)
+BRAND_INACTIVE_BG = "#2A1A12"
+BRAND_INACTIVE_BORDER = "#6A301A"
+
 # Dimensions (pixels effectifs)
 TOP_BAR_HEIGHT = 56
+RAIL_WIDTH = 208            # rail de navigation (section 07)
+CONTENT_MAX_WIDTH = 1600    # largeur utile plafonnée sur grand écran (section 08)
 STATUS_BAR_HEIGHT = 32
 WINDOW_MIN_WIDTH = 1024
 WINDOW_MIN_HEIGHT = 640

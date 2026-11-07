@@ -18,11 +18,44 @@ def application_stylesheet() -> str:
         background: {t.GROUND};
         border-bottom: 1px solid {t.LINE_SOFT};
     }}
-    QLabel#Placeholder {{
+    QLabel#TopChip {{
+        color: {t.MUTED};
+        font-family: {_family(t.FONT_MONO)};
+        font-size: 12px;
+        border: 1px solid {t.LINE};
+        border-radius: 4px;
+        padding: 4px 8px;
+    }}
+    QWidget#NavRail {{
+        background: {t.PANEL};
+        border-right: 1px solid {t.LINE_SOFT};
+    }}
+    QLabel#RailGroupLabel {{
         color: {t.DIM};
         font-family: {_family(t.FONT_LABEL)};
-        font-size: 12px;
-        letter-spacing: 1px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 1.4px;
+        margin: 6px 4px 2px 4px;
+    }}
+    QPushButton#NewSetlistButton {{
+        min-height: 36px;
+        background: {t.BRAND};
+        color: {t.INK};
+        border: 1px solid {t.BRAND};
+        border-radius: 5px;
+        font-family: {_family(t.FONT_LABEL)};
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 1.4px;
+    }}
+    QPushButton#NewSetlistButton:disabled {{
+        background: {t.BRAND_INACTIVE_BG};
+        color: {t.BRAND};
+        border: 1px solid {t.BRAND_INACTIVE_BORDER};
+    }}
+    QWidget#DashboardPage, QWidget#DashboardContent {{
+        background: {t.GROUND};
     }}
     QStatusBar {{
         background: {t.GROUND};
@@ -138,5 +171,20 @@ def application_stylesheet() -> str:
     QStatusBar QLabel {{
         color: {t.MUTED};
         padding-left: 12px;
+    }}
+    QStatusBar QLabel#StatusPart {{
+        color: {t.DIM};
+        font-family: {_family(t.FONT_MONO)};
+        font-size: 12px;
+        padding-left: 20px;
+    }}
+    QStatusBar QLabel#DiagnosticLabel {{
+        color: {t.LINE_STRONG};
+        font-family: {_family(t.FONT_MONO)};
+        font-size: 11px;
+        padding-right: 12px;
+    }}
+    QStatusBar::item {{
+        border: none;
     }}
     """
