@@ -1,7 +1,7 @@
 """Page MAIN : zone centrale du dashboard (section 07).
 
-Contenu (incrément 2.4) : titre « RACCOURCIS · 16 TOUCHES », rangée de 16
-touches, titre « CONCERTS » (place du bouton de tri réservée pour 2.5),
+Contenu (incréments 2.4 et 2.5) : titre « RACCOURCIS · 16 TOUCHES », rangée de
+16 touches, titre « CONCERTS » avec le bouton de tri à droite (2.5),
 grille des 16 emplacements, indicateur vers SETLISTS.
 Sans concert à venir, le panneau d'état vide s'affiche sous le titre « CONCERTS »,
 au-dessus des 16 emplacements INIT, pour rester lisible sans défilement à
@@ -11,6 +11,10 @@ Touche N et emplacement N forment une paire : survol ou focus de l'une met
 les deux en évidence ; un clic sur l'une ou l'autre émet la même demande
 d'ouverture de fiche (D8), sans écran provisoire avant 2.7 (arbitrage B).
 La page affiche une DashboardView calculée par le domaine : aucune règle ici.
+Le bouton de tri émet sort_toggled ; la fenêtre décide du sens, le mémorise et
+le renvoie (set_sort_order). Au changement de sens, les cartes glissent en
+180 ms (reorder_animation), sauf si les animations sont réduites ; les touches
+sont actualisées immédiatement.
 Quand la hauteur de la fenêtre ne suffit pas (1024 × 640, mise à l'échelle 200 %),
 la zone centrale défile verticalement ; jamais horizontalement.
 """
@@ -21,11 +25,14 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
 
-from scenix16.domain.dashboard import BASE_KEYS, DashboardView
+from scenix16.domain.dashboard import BASE_KEYS, DashboardView, SortOrder
+from scenix16.ui.dashboard.reorder_animation import ReorderOverlay, snapshot
 from scenix16.ui.dashboard.sequencer import Sequencer
 from scenix16.ui.dashboard.setlists_indicator import EmptyState, SetlistsIndicator
 from scenix16.ui.dashboard.slot_grid import SlotGrid
+from scenix16.ui.system import animations_enabled
 from scenix16.ui.theme import tokens as t
+from scenix16.ui.widgets.sort_button import SortButton
 
 CONTENT_MARGINS = (28, 24, 28, 24)   # marges de la zone centrale (maquette section 07)
 KEYS_TITLE = "RACCOURCIS · 16 TOUCHES"
@@ -46,6 +53,7 @@ class _Canvas(QWidget):
 
 class DashboardPage(QWidget):
     concert_requested = Signal(int)   # identifiant de la setlist à ouvrir (fiche en 2.7)
+    sort_toggled = Signal()            # demande d'inversion du sens de tri (D1, D7)
 
     def __init__(self, parent=None, animations: bool | None = None):
         super().__init__(parent)
@@ -77,8 +85,12 @@ class DashboardPage(QWidget):
         concerts_row.setContentsMargins(0, 8, 0, 0)
         self.concerts_title = QLabel(CONCERTS_TITLE, objectName="SectionTitle")
         concerts_row.addWidget(self.concerts_title)
-        concerts_row.addStretch(1)                 # place du bouton de tri (2.5)
+        concerts_row.addStretch(1)
+        self.sort_button = SortButton()
+        self.sort_button.clicked.connect(self.sort_toggled)
+        concerts_row.addWidget(self.sort_button, 0, Qt.AlignVCenter)
         self.sort_slot = concerts_row
+        self.reorder: ReorderOverlay | None = None
         self.slot_grid = SlotGrid()
         self.indicator = SetlistsIndicator()
         self.empty_state = EmptyState()
@@ -114,14 +126,32 @@ class DashboardPage(QWidget):
         return self.slot_grid.slots[number - 1]
 
     # --- données ---------------------------------------------------------------
+    def set_sort_order(self, order: SortOrder) -> None:
+        self.sort_button.set_order(order)
+
+    def _animations_on(self) -> bool:
+        return animations_enabled() if self.animations is None else self.animations
+
+    def _should_glide(self, view: DashboardView | None) -> bool:
+        previous = self.view
+        return (self._animations_on() and self.isVisible() and previous is not None
+                and view is not None and previous.order is not view.order
+                and bool(previous.base_keys or view.base_keys))
+
+    def stop_reorder(self) -> None:
+        if self.reorder is not None:
+            self.reorder.stop()
+            self.reorder = None
+
     def set_view(self, view: DashboardView | None) -> None:
+        self.stop_reorder()
+        glide = self._should_glide(view)
+        before = snapshot(self.slot_grid)[0] if glide else None
         self.view = view
         base = {k.number: k for k in view.base_keys} if view else {}
         for n in range(1, BASE_KEYS + 1):
             dk = base.get(n)
             key, slot = self.key(n), self.slot(n)
-            self._sources[n].clear()
-            key.set_highlighted(False)
             key.set_concert_state(dk.state if dk else None, animations=self.animations)
             if dk:
                 c = dk.concert
@@ -132,8 +162,16 @@ class DashboardPage(QWidget):
                 key.setToolTip("")
                 key.setAccessibleName(f"Touche {n:02d} : libre (INIT)")
             slot.set_concert(dk, animations=self.animations)
+        self._resync_pairs()
         self.indicator.set_view(view)
         self.empty_state.set_view(view)
+        if glide:
+            after, free_after = snapshot(self.slot_grid)
+            self.reorder = ReorderOverlay(self.slot_grid, before, after, free_after)
+            self.reorder.finished.connect(self._reorder_finished)
+
+    def _reorder_finished(self) -> None:
+        self.reorder = None
 
     def set_open_concert(self, setlist_id: int | None) -> None:
         """Anneau « fiche ouverte » sur la paire du concert (utilisé à partir de 2.7)."""
@@ -144,6 +182,31 @@ class DashboardPage(QWidget):
             slot.set_selected(is_open)
 
     # --- couplage ----------------------------------------------------------------
+    def _resync_pairs(self) -> None:
+        """Rétablit la mise en évidence des paires d'après le survol et le focus réels.
+
+        Après un rafraîchissement ou un changement de tri, la paire N peut porter un
+        autre concert, ou devenir INIT, alors que la souris ou le focus n'ont pas bougé :
+        les sources sont recalculées, et touche et carte sont remises en cohérence.
+        """
+        for n in range(1, BASE_KEYS + 1):
+            key, slot = self.key(n), self.slot(n)
+            key.hovered = key.underMouse() and not key.is_init
+            sources = self._sources[n]
+            sources.clear()
+            if not key.is_init and not slot.is_init:
+                if key.hovered:
+                    sources.add("key-hover")
+                if key.hasFocus():
+                    sources.add("key-focus")
+                if slot.underMouse():
+                    sources.add("slot-hover")
+                if slot.hasFocus():
+                    sources.add("slot-focus")
+            on = bool(sources)
+            key.set_highlighted(on)
+            slot.set_highlighted(on)
+
     def _pair_source(self, number: int, source: str, on: bool) -> None:
         """Mise en évidence de la paire tant qu'au moins une source est active."""
         sources = self._sources[number]
@@ -173,5 +236,6 @@ class DashboardPage(QWidget):
         self._outer.setContentsMargins(left + extra // 2, top, right + extra - extra // 2, bottom)
 
     def resizeEvent(self, event):
+        self.stop_reorder()                 # les positions changent : fin immédiate
         super().resizeEvent(event)
         self.slot_grid.refresh_mode()

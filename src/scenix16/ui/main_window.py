@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
 
 from scenix16.services import dashboard_service
+from scenix16.storage import preferences
 from scenix16.ui.dashboard.page import DashboardPage
 from scenix16.ui.settings_page import SettingsPage
 from scenix16.ui.shell.nav_rail import NavRail
@@ -32,6 +33,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.userdata = userdata
         self.clock = clock
+        # sens de tri mémorisé (D7) ; « Plus ancien d'abord » par défaut (D1)
+        self.sort_order = preferences.load_sort_order(userdata, clock)
         self.setWindowTitle("SceniX16")
         self.setMinimumSize(t.WINDOW_MIN_WIDTH, t.WINDOW_MIN_HEIGHT)
         self.resize(t.WINDOW_DEFAULT_WIDTH, t.WINDOW_DEFAULT_HEIGHT)
@@ -57,6 +60,7 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         self.main_page = DashboardPage()
         self.main_page.setFocusPolicy(Qt.ClickFocus)   # reçoit le focus au retour, sans anneau visible
+        self.main_page.sort_toggled.connect(self.toggle_sort)
         self.settings_page = settings_page or SettingsPage(userdata)
         self.settings_page.back_requested.connect(self.show_main)
         self.pages.addWidget(self.main_page)
@@ -76,11 +80,21 @@ class MainWindow(QMainWindow):
     def refresh(self) -> None:
         """Relit les chiffres (ouverture, retour sur MAIN, après un import)."""
         now = self.clock()
-        summary = dashboard_service.load_summary(self.userdata, now)
+        summary = dashboard_service.load_summary(self.userdata, now, self.sort_order)
         self.top_bar.set_markers(dashboard_service.concerts_label(summary),
                                  dashboard_service.date_label(now))
         self.status_line.set_parts(dashboard_service.status_parts(summary))
+        self.main_page.set_sort_order(self.sort_order)
         self.main_page.set_view(summary.view)
+
+    def toggle_sort(self) -> None:
+        """Inverse le sens de tri, le mémorise (D7) et réaffiche le dashboard.
+
+        Un échec d'écriture ne bloque jamais : le sens choisi reste actif pour la session.
+        """
+        self.sort_order = dashboard_service.other_order(self.sort_order)
+        preferences.save_sort_order(self.userdata, self.sort_order, self.clock)
+        self.refresh()
 
     # --- navigation MAIN <-> PARAMÈTRES -------------------------------------
     def show_settings(self) -> None:

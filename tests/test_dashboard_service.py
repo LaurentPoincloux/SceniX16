@@ -65,3 +65,21 @@ def test_reading_does_not_modify_database(userdata):
     before = hashlib.sha256(path.read_bytes()).hexdigest()
     ds.load_summary(userdata, datetime(2026, 11, 7, 12, 0))
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+# --- libellés du bouton de tri (D12, incrément 2.5) ---------------------------
+
+def test_sort_labels_d12():
+    from scenix16.domain.dashboard import SortOrder
+    assert ds.sort_label(SortOrder.OLDEST_FIRST) == "Plus ancien d'abord"
+    assert ds.sort_label(SortOrder.NEWEST_FIRST) == "Plus récent d'abord"
+    assert ds.other_order(SortOrder.OLDEST_FIRST) is SortOrder.NEWEST_FIRST
+    assert ds.other_order(SortOrder.NEWEST_FIRST) is SortOrder.OLDEST_FIRST
+
+
+def test_sort_accessible_name_describes_action():
+    from scenix16.domain.dashboard import SortOrder
+    assert ds.sort_accessible_name(SortOrder.OLDEST_FIRST) == \
+        "Classement « Plus ancien d'abord ». Activer pour passer à « Plus récent d'abord »."
+    assert ds.sort_accessible_name(SortOrder.NEWEST_FIRST) == \
+        "Classement « Plus récent d'abord ». Activer pour passer à « Plus ancien d'abord »."

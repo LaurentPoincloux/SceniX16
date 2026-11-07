@@ -123,6 +123,28 @@ def empty_state_text(view: DashboardView | None) -> str:
     return text
 
 
+SORT_LABELS = {                       # D12 : mêmes mots sur le dashboard et dans SETLISTS
+    SortOrder.OLDEST_FIRST: "Plus ancien d'abord",
+    SortOrder.NEWEST_FIRST: "Plus récent d'abord",
+}
+
+
+def other_order(order: SortOrder) -> SortOrder:
+    """Sens obtenu en activant le bouton de tri."""
+    return SortOrder.NEWEST_FIRST if order is SortOrder.OLDEST_FIRST else SortOrder.OLDEST_FIRST
+
+
+def sort_label(order: SortOrder) -> str:
+    """Libellé D12 du sens affiché (l'interface le présente en capitales)."""
+    return SORT_LABELS[order]
+
+
+def sort_accessible_name(order: SortOrder) -> str:
+    """Nom accessible : sens affiché et action d'inversion, avec les formulations D12."""
+    return (f"Classement « {sort_label(order)} ». "
+            f"Activer pour passer à « {sort_label(other_order(order))} ».")
+
+
 def status_parts(summary: DashboardSummary) -> list[str]:
     """Barre d'état (section 07) : « SceniX16 · N titres au catalogue · M setlists »."""
     return [
