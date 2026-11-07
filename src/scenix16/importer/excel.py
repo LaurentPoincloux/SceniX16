@@ -113,19 +113,74 @@ def _show(value: str) -> str:
     return repr(value)
 
 
-def read_workbook(path: Path) -> WorkbookData:
-    raw = Path(path).read_bytes()  # lecture seule, une seule fois
-    sha256 = hashlib.sha256(raw).hexdigest()
-    with warnings.catch_warnings():
-        # extensions Excel (validations, MFC) non gérées par openpyxl : sans effet sur les données
-        warnings.simplefilter("ignore", UserWarning)
-        wb = openpyxl.load_workbook(io.BytesIO(raw))
-        cached = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+class WorkbookFormatError(Exception):
+    """Le fichier n'est pas un classeur SceniX16 lisible. Message destiné à l'utilisateur."""
 
-    findings: list[Finding] = []
-    tracks = _read_tracks(wb, findings)
-    setlists = _read_setlists(wb, cached, tracks, findings)
-    _track_findings(tracks, findings)
+
+NOT_SCENIX16 = "Ce fichier n'a pas la structure du classeur SceniX16"
+
+
+def _header(ws, ref: str) -> str:
+    value = ws[ref].value
+    return str(value).strip().casefold() if value is not None else ""
+
+
+def validate_structure(wb) -> None:
+    """Vérifie les éléments indispensables à la lecture, avant toute lecture des données."""
+    missing = [s for s in (MAIN_SHEET, SETLISTS_SHEET, TRACKS_SHEET) if s not in wb.sheetnames]
+    if missing:
+        raise WorkbookFormatError(f"{NOT_SCENIX16} : feuille(s) absente(s) : {', '.join(missing)}.")
+
+    tracks = wb[TRACKS_SHEET]
+    expected = {"A1": ("title",), "B1": ("key",), "D1": ("virus",), "E1": ("virus status",)}
+    wrong = [ref for ref, starts in expected.items()
+             if not _header(tracks, ref).startswith(starts)]
+    if wrong:
+        raise WorkbookFormatError(
+            f"{NOT_SCENIX16} : en-têtes de la feuille TRACKS inattendus "
+            f"({', '.join(f'TRACKS!{r}' for r in wrong)}).")
+
+    if not _header(wb[SETLISTS_SHEET], "A1").startswith("shows"):
+        raise WorkbookFormatError(f"{NOT_SCENIX16} : en-tête SETLISTS!A1 inattendu.")
+
+    listed = wb[SETLISTS_SHEET]
+    for r in range(2, listed.max_row + 1):
+        sheet = listed.cell(r, 1).value
+        if not sheet or str(sheet) not in wb.sheetnames:
+            continue  # feuille absente : signalée comme particularité, non importée
+        ws = wb[str(sheet)]
+        if not (_header(ws, "B1") == "title" and _header(ws, "I1").startswith("lieu")
+                and _header(ws, "K1").startswith("date")):
+            raise WorkbookFormatError(
+                f"{NOT_SCENIX16} : la feuille {sheet} n'a pas les colonnes TITLE / Lieu / Date "
+                "attendues (B1, I1, K1).")
+
+
+def read_workbook(path: Path) -> WorkbookData:
+    try:
+        raw = Path(path).read_bytes()  # lecture seule, une seule fois
+    except OSError as exc:
+        raise WorkbookFormatError(f"Le fichier ne peut pas être lu : {exc.strerror or exc}.") from exc
+    sha256 = hashlib.sha256(raw).hexdigest()
+    try:
+        with warnings.catch_warnings():
+            # extensions Excel (validations, MFC) non gérées par openpyxl : sans effet sur les données
+            warnings.simplefilter("ignore", UserWarning)
+            wb = openpyxl.load_workbook(io.BytesIO(raw))
+            cached = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+    except Exception as exc:  # fichier non Excel, archive endommagée, format .xls…
+        raise WorkbookFormatError(
+            "Ce fichier n'est pas un classeur Excel (.xlsx) lisible.") from exc
+
+    validate_structure(wb)
+    try:
+        findings: list[Finding] = []
+        tracks = _read_tracks(wb, findings)
+        setlists = _read_setlists(wb, cached, tracks, findings)
+        _track_findings(tracks, findings)
+    except Exception as exc:
+        raise WorkbookFormatError(
+            f"{NOT_SCENIX16} : lecture impossible ({type(exc).__name__}).") from exc
     return WorkbookData(Path(path), sha256, tracks, setlists, findings)
 
 

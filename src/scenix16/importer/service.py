@@ -12,13 +12,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from scenix16.importer.excel import WorkbookData, read_workbook
+from scenix16.importer.excel import WorkbookData, WorkbookFormatError, read_workbook
 from scenix16.importer.report import build_report
 from scenix16.storage import database
 
 
 class ImportRefused(RuntimeError):
-    """L'import est refusé (base non vide, emplacement non accessible…)."""
+    """L'import est refusé (base non vide, fichier non conforme…) : rien n'est écrit."""
+
+
+class ImportFailed(RuntimeError):
+    """Erreur technique pendant l'écriture : la transaction est annulée, la base reste inchangée."""
 
 
 @dataclass
@@ -28,6 +32,7 @@ class ImportResult:
     setlists: int
     entries: int
     report_path: Path | None
+    report_error: str | None = None
 
 
 def import_into(connection: sqlite3.Connection, data: WorkbookData) -> tuple[int, int, int]:
@@ -87,16 +92,31 @@ def import_into_userdata(xlsx: Path, userdata: Path) -> ImportResult:
 
 
 def import_workbook(xlsx: Path, db_path: Path, report_dir: Path | None = None) -> ImportResult:
-    data = read_workbook(xlsx)
-    connection = database.connect(db_path)
+    try:
+        data = read_workbook(xlsx)
+    except WorkbookFormatError as exc:
+        raise ImportRefused(str(exc)) from exc
+    try:
+        connection = database.connect(db_path)
+    except (sqlite3.Error, RuntimeError) as exc:
+        raise ImportFailed(f"La base de données ne peut pas être ouverte : {exc}") from exc
     try:
         tracks, setlists, entries = import_into(connection, data)
+    except ImportRefused:
+        raise
+    except Exception as exc:  # transaction annulée par import_into : aucune donnée partielle
+        raise ImportFailed(
+            f"L'import a échoué ({type(exc).__name__}) ; aucune donnée n'a été enregistrée."
+        ) from exc
     finally:
         connection.close()
-    report_path = None
+    report_path, report_error = None, None
     if report_dir is not None:
-        report_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        report_path = report_dir / f"import-{stamp}.md"
-        report_path.write_text(build_report(data, tracks, setlists, entries), encoding="utf-8")
-    return ImportResult(data, tracks, setlists, entries, report_path)
+        try:
+            report_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            report_path = report_dir / f"import-{stamp}.md"
+            report_path.write_text(build_report(data, tracks, setlists, entries), encoding="utf-8")
+        except OSError as exc:
+            report_path, report_error = None, f"Le rapport n'a pas pu être écrit : {exc}"
+    return ImportResult(data, tracks, setlists, entries, report_path, report_error)

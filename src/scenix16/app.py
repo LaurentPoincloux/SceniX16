@@ -70,7 +70,7 @@ def main(argv: list[str]) -> int:
         return outcome.exit_code
 
     try:
-        window = MainWindow()
+        window = MainWindow(outcome.userdata)
         window.show()
 
         # Outil de vérification : ouvre la fenêtre, en enregistre une capture

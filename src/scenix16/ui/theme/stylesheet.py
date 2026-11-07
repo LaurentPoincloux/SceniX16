@@ -73,6 +73,68 @@ def application_stylesheet() -> str:
         outline: none;
         border: 2px solid {t.BRAND};
     }}
+    QToolButton#GearButton {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 5px;
+    }}
+    QToolButton#GearButton:hover {{
+        background: {t.RAISED};
+    }}
+    QToolButton#GearButton[active="true"] {{
+        background: {t.RAISED};
+        border: 1px solid {t.LINE_STRONG};
+    }}
+    QToolButton#GearButton:focus {{
+        border: 2px solid {t.BRAND};
+    }}
+    QWidget#SettingsPage {{
+        background: {t.GROUND};
+    }}
+    QLabel#PageTitle {{
+        color: {t.SILK};
+        font-family: {_family(t.FONT_LABEL)};
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: 2px;
+    }}
+    QWidget#SettingsSection {{
+        border-top: 1px solid {t.LINE_SOFT};
+    }}
+    QLabel#SectionLabel {{
+        color: {t.MUTED};
+        font-family: {_family(t.FONT_LABEL)};
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 2px;
+    }}
+    QLabel#HintLabel {{
+        color: {t.DIM};
+        font-size: 12px;
+    }}
+    QPushButton[variant="ghost"] {{
+        background: transparent;
+        color: {t.TEXT};
+        border: 1px solid transparent;
+        padding: 0 8px;
+        text-align: left;
+    }}
+    QPushButton[variant="ghost"]:hover {{
+        background: {t.RAISED};
+    }}
+    QPushButton[variant="ghost"]:disabled {{
+        color: {t.DIM};
+        background: transparent;
+    }}
+    QPushButton[variant="back"] {{
+        background: transparent;
+        color: {t.TEXT};
+        border: 1px solid {t.LINE_STRONG};
+        padding: 0 10px;
+    }}
+    QPushButton[variant="back"]:hover {{
+        background: {t.RAISED};
+    }}
     QStatusBar QLabel {{
         color: {t.MUTED};
         padding-left: 12px;

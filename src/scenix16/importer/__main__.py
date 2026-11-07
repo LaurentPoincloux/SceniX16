@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from scenix16.importer.service import ImportRefused, import_into_userdata
+from scenix16.importer.service import ImportFailed, ImportRefused, import_into_userdata
 from scenix16.storage import userdata
 from scenix16.storage.instance_lock import InstanceLock
 
@@ -37,10 +37,13 @@ def main(argv: list[str]) -> int:
         except ImportRefused as exc:
             print(exc)
             return 4
+        except ImportFailed as exc:
+            print(exc)
+            return 6
     print(f"Import terminé : {result.tracks} morceaux, {result.setlists} setlists, "
           f"{result.entries} entrées, {len(result.data.findings)} particularités à vérifier.")
     print(f"Base : {userdata.database_path(check.path)}")
-    print(f"Rapport : {result.report_path}")
+    print(f"Rapport : {result.report_path or result.report_error}")
     return 0
 
 

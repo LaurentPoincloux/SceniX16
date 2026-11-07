@@ -1,29 +1,34 @@
-"""Fenêtre principale – socle de la phase 0.
+"""Fenêtre principale.
 
-Contient seulement la barre supérieure avec le logo SceniX16, une zone
-centrale vide et une barre d'état de diagnostic. Le dashboard (touches,
-emplacements) arrivera en phase 2.
+Barre supérieure (logo SceniX16 et engrenage des paramètres), zone centrale
+à deux pages (MAIN, encore à l'état de socle, et PARAMÈTRES) et barre d'état
+de diagnostic. Le dashboard (touches, emplacements) arrivera en phase 2.
 """
 
 import platform
+from pathlib import Path
 
 from PySide6 import QtCore
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QStackedWidget,
     QStatusBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from scenix16 import __version__
 from scenix16.paths import resource
+from scenix16.ui.settings_page import SettingsPage
 from scenix16.ui.theme import tokens as t
 
 LOGO_HEIGHT = 30
+GEAR_SIZE = 36
 
 
 class LogoLabel(QLabel):
@@ -61,7 +66,7 @@ class LogoLabel(QLabel):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, userdata: Path | None = None, settings_page: SettingsPage | None = None):
         super().__init__()
         self.setWindowTitle("SceniX16")
         self.setMinimumSize(t.WINDOW_MIN_WIDTH, t.WINDOW_MIN_HEIGHT)
@@ -79,11 +84,24 @@ class MainWindow(QMainWindow):
         self.logo = LogoLabel(resource("logos", "scenix16.png"), LOGO_HEIGHT)
         top_layout.addWidget(self.logo)
         top_layout.addStretch(1)
+        self.gear_button = QToolButton(objectName="GearButton")
+        self.gear_button.setIcon(QIcon(str(resource("icons", "settings.svg"))))
+        self.gear_button.setIconSize(QSize(20, 20))
+        self.gear_button.setFixedSize(GEAR_SIZE, GEAR_SIZE)
+        self.gear_button.setToolTip("Paramètres")
+        self.gear_button.setAccessibleName("Paramètres")
+        self.gear_button.clicked.connect(self.show_settings)
+        top_layout.addWidget(self.gear_button)
         layout.addWidget(top_bar)
 
-        placeholder = QLabel("SOCLE TECHNIQUE · PHASE 0", objectName="Placeholder")
-        placeholder.setAlignment(Qt.AlignCenter)
-        layout.addWidget(placeholder, 1)
+        self.pages = QStackedWidget()
+        self.main_page = QLabel("SOCLE TECHNIQUE · PHASE 0", objectName="Placeholder")
+        self.main_page.setAlignment(Qt.AlignCenter)
+        self.settings_page = settings_page or SettingsPage(userdata)
+        self.settings_page.back_requested.connect(self.show_main)
+        self.pages.addWidget(self.main_page)
+        self.pages.addWidget(self.settings_page)
+        layout.addWidget(self.pages, 1)
 
         self.setCentralWidget(body)
 
@@ -94,6 +112,18 @@ class MainWindow(QMainWindow):
         self._diagnostic = QLabel()
         status.addWidget(self._diagnostic)
         self.update_diagnostic()
+
+    # --- navigation minimale MAIN <-> PARAMÈTRES ----------------------------
+    def show_settings(self) -> None:
+        self.pages.setCurrentWidget(self.settings_page)
+        self.settings_page.setFocus()
+        self.gear_button.setProperty("active", True)
+        self.gear_button.style().polish(self.gear_button)
+
+    def show_main(self) -> None:
+        self.pages.setCurrentWidget(self.main_page)
+        self.gear_button.setProperty("active", False)
+        self.gear_button.style().polish(self.gear_button)
 
     def update_diagnostic(self) -> None:
         screen = self.screen()
