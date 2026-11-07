@@ -31,6 +31,48 @@ def application_stylesheet() -> str:
         font-family: {_family(t.FONT_MONO)};
         font-size: 11px;
     }}
+    QDialog#MessageDialog {{
+        background: {t.RAISED};
+        color: {t.TEXT};
+        font-family: {_family(t.FONT_UI)};
+    }}
+    QLabel#DialogTitle {{
+        color: {t.SILK};
+        font-family: {_family(t.FONT_LABEL)};
+        font-size: 17px;
+        font-weight: 600;
+    }}
+    QLabel#DialogText {{
+        color: {t.MUTED};
+        font-size: 13px;
+    }}
+    QPushButton {{
+        min-height: 34px;
+        padding: 0 16px;
+        border-radius: 5px;
+        font-family: {_family(t.FONT_LABEL)};
+        font-size: 13px;
+        font-weight: 600;
+    }}
+    QPushButton[variant="primary"] {{
+        background: {t.BRAND};
+        color: {t.INK};
+        border: 1px solid {t.BRAND};
+    }}
+    QPushButton[variant="primary"]:disabled {{
+        background: {t.CELL};
+        color: {t.DIM};
+        border: 1px solid {t.LINE};
+    }}
+    QPushButton[variant="secondary"] {{
+        background: transparent;
+        color: {t.TEXT};
+        border: 1px solid {t.LINE_STRONG};
+    }}
+    QPushButton:focus {{
+        outline: none;
+        border: 2px solid {t.BRAND};
+    }}
     QStatusBar QLabel {{
         color: {t.MUTED};
         padding-left: 12px;

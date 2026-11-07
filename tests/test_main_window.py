@@ -17,7 +17,7 @@ def make_window(qtbot, qapp):
     return window
 
 
-def test_default_logos_present():
+def test_default_logos_present(qapp):  # QPixmap exige une application Qt
     for name in ("scenix16.png", "waiting-for-words.png"):
         path = resource("logos", name)
         assert path.is_file(), path

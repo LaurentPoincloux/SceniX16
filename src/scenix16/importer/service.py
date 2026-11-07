@@ -75,6 +75,17 @@ def import_into(connection: sqlite3.Connection, data: WorkbookData) -> tuple[int
     return len(data.tracks), len(data.setlists), entries
 
 
+def import_into_userdata(xlsx: Path, userdata: Path) -> ImportResult:
+    """Point d'entrée commun (ligne de commande et future interface).
+
+    L'appelant doit détenir le verrou d'instance de `userdata` : l'application
+    le prend au démarrage, la ligne de commande le prend elle-même.
+    """
+    from scenix16.storage.userdata import database_path
+
+    return import_workbook(xlsx, database_path(userdata), userdata / "logs")
+
+
 def import_workbook(xlsx: Path, db_path: Path, report_dir: Path | None = None) -> ImportResult:
     data = read_workbook(xlsx)
     connection = database.connect(db_path)
