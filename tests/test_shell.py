@@ -160,7 +160,7 @@ def test_content_fills_at_minimum_size(window, qtbot):
     qtbot.wait(50)
     assert window.width() == t.WINDOW_MIN_WIDTH
     content = window.main_page.content
-    assert content.width() == window.main_page.width() - 56     # marges 28 + 28
+    assert content.width() == window.main_page.scroll.viewport().width() - 56   # marges 28 + 28, hors barre de défilement
     assert window.pages.width() == t.WINDOW_MIN_WIDTH - t.RAIL_WIDTH
 
 

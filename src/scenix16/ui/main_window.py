@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):
         self.top_bar.set_markers(dashboard_service.concerts_label(summary),
                                  dashboard_service.date_label(now))
         self.status_line.set_parts(dashboard_service.status_parts(summary))
+        self.main_page.set_view(summary.view)
 
     # --- navigation MAIN <-> PARAMÈTRES -------------------------------------
     def show_settings(self) -> None:

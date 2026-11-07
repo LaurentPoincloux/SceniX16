@@ -54,8 +54,59 @@ def application_stylesheet() -> str:
         color: {t.BRAND};
         border: 1px solid {t.BRAND_INACTIVE_BORDER};
     }}
-    QWidget#DashboardPage, QWidget#DashboardContent {{
+    QWidget#DashboardPage, QWidget#DashboardCanvas, QWidget#DashboardContent {{
         background: {t.GROUND};
+    }}
+    QScrollArea#DashboardScroll {{
+        background: {t.GROUND};
+        border: none;
+    }}
+    QScrollArea#DashboardScroll QScrollBar:vertical {{
+        background: {t.GROUND};
+        width: 10px;
+        margin: 2px 2px 2px 0;
+    }}
+    QScrollArea#DashboardScroll QScrollBar::handle:vertical {{
+        background: {t.LINE_STRONG};
+        border-radius: 4px;
+        min-height: 32px;
+    }}
+    QScrollArea#DashboardScroll QScrollBar::add-line:vertical,
+    QScrollArea#DashboardScroll QScrollBar::sub-line:vertical,
+    QScrollArea#DashboardScroll QScrollBar::add-page:vertical,
+    QScrollArea#DashboardScroll QScrollBar::sub-page:vertical {{
+        height: 0;
+        background: none;
+    }}
+    QLabel#SectionTitle {{
+        color: {t.SILK};
+        font-family: {_family(t.FONT_LABEL)};
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 1.5px;
+    }}
+    QWidget#SetlistsIndicator, QWidget#EmptyState {{
+        background: {t.PANEL};
+        border: 1px solid {t.LINE_SOFT};
+        border-radius: 6px;
+    }}
+    QLabel#IndicatorText {{
+        color: {t.MUTED};
+        font-size: 13px;
+    }}
+    QLabel#EmptyTitle {{
+        color: {t.SILK};
+        font-family: {_family(t.FONT_LABEL)};
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: 1.6px;
+    }}
+    QLabel#InactiveLink {{
+        color: {t.DIM};
+        font-family: {_family(t.FONT_LABEL)};
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 1px;
     }}
     QStatusBar {{
         background: {t.GROUND};

@@ -71,6 +71,58 @@ def date_label(now: datetime) -> str:
     return now.strftime("%d/%m/%Y")
 
 
+def countdown_label(days: int) -> str:
+    """Pied d'un emplacement : « Ce soir » le jour du concert, sinon « J-n »."""
+    return "Ce soir" if days == 0 else f"J-{days}"
+
+
+STATE_TAGS = {"today": "AUJOURD'HUI", "next": "PROCHAIN", "upcoming": "À VENIR"}
+
+
+def card_venue(venue: str | None) -> str:
+    """Salle / lieu sur une ligne, pour l'affichage dans une carte uniquement (arbitrage C)."""
+    return (venue or "").replace("\r\n", " ").replace("\n", " ").strip()
+
+
+def indicator_parts(view: DashboardView | None) -> tuple[str, str] | None:
+    """Indicateur sous les emplacements (D5, D22) ; None s'il n'y a rien à signaler."""
+    if view is None or view.is_empty:
+        return None
+    c = view.counters
+    parts = []
+    if c.undated:
+        parts.append(f"{c.undated} sans date")
+    if c.past:
+        parts.append(plural(c.past, "passé", "passés"))
+    if c.cancelled:
+        parts.append(plural(c.cancelled, "annulé", "annulés"))
+    if not parts:
+        return None
+    left = f"{plural(view.upcoming_count, 'concert', 'concerts')} à venir sur le dashboard"
+    return left, f"{' · '.join(parts)} dans SETLISTS →"
+
+
+def empty_state_text(view: DashboardView | None) -> str:
+    """Texte de l'état vide (section 06)."""
+    text = "Les 16 touches sont libres (INIT)."
+    if view is None:
+        return text
+    c = view.counters
+    parts = []
+    if c.past:
+        parts.append(plural(c.past, "setlist passée", "setlists passées"))
+    if c.undated:
+        parts.append(plural(c.undated, "setlist sans date", "setlists sans date"))
+    if c.cancelled:
+        parts.append(plural(c.cancelled, "setlist annulée", "setlists annulées"))
+    if parts:
+        total = c.past + c.undated + c.cancelled
+        joined = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " et " + parts[-1]
+        verb = "est conservée" if total <= 1 else "sont conservées"
+        text += f" {joined[0].upper() + joined[1:]} {verb} dans SETLISTS."
+    return text
+
+
 def status_parts(summary: DashboardSummary) -> list[str]:
     """Barre d'état (section 07) : « SceniX16 · N titres au catalogue · M setlists »."""
     return [

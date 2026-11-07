@@ -34,7 +34,8 @@ def test_window_title_and_sizes(qtbot, qapp):
 def test_background_is_design_book_ground(qtbot, qapp):
     window = make_window(qtbot, qapp)
     image = window.grab().toImage()
-    sample = QColor(image.pixel(image.width() // 2, image.height() // 3))
+    # marge gauche de la zone centrale : fond nu (le centre porte le panneau d'état vide)
+    sample = QColor(image.pixel(t.RAIL_WIDTH + 12, image.height() // 3))
     assert sample.name() == t.GROUND.lower()
 
 

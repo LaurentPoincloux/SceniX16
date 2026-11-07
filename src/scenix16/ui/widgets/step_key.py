@@ -26,7 +26,7 @@ from __future__ import annotations
 import math
 from enum import Enum
 
-from PySide6.QtCore import QEasingCurve, QPointF, QRectF, QSize, Qt, QVariantAnimation
+from PySide6.QtCore import QEasingCurve, QPointF, QRectF, QSize, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QRadialGradient
 from PySide6.QtWidgets import QAbstractButton, QSizePolicy
 
@@ -65,6 +65,10 @@ _STATE_LED = {
 
 
 class StepKey(QAbstractButton):
+    hover_changed = Signal(bool)     # survol (couplage avec l'emplacement)
+    focus_changed = Signal(bool)     # focus clavier (couplage avec l'emplacement)
+    navigate = Signal(int)           # ← (-1) / → (+1), D9
+
     def __init__(self, number: int, group: int, parent=None):
         super().__init__(parent)
         self.number = number
@@ -170,12 +174,39 @@ class StepKey(QAbstractButton):
         if not self.is_init:
             self.hovered = True
             self.update()
+            self.hover_changed.emit(True)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
+        was_hovered = self.hovered
         self.hovered = False
         self.update()
+        if was_hovered:
+            self.hover_changed.emit(False)
         super().leaveEvent(event)
+
+    def focusInEvent(self, event):
+        self.focus_changed.emit(True)
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self.focus_changed.emit(False)
+        super().focusOutEvent(event)
+
+    def keyPressEvent(self, event):
+        """D9 : ← → entre les touches actives ; Entrée / Espace ouvrent ; ↑ ↓ sans effet."""
+        key = event.key()
+        if key == Qt.Key_Left:
+            self.navigate.emit(-1)
+        elif key == Qt.Key_Right:
+            self.navigate.emit(1)
+        elif key in (Qt.Key_Return, Qt.Key_Enter):
+            if not self.is_init:
+                self.click()
+        elif key in (Qt.Key_Up, Qt.Key_Down):
+            event.accept()
+        else:
+            super().keyPressEvent(event)   # Espace : comportement standard du bouton
 
     # --- dessin ------------------------------------------------------------
     def body_color(self) -> QColor:
