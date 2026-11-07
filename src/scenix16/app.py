@@ -11,6 +11,7 @@ from scenix16 import startup
 from scenix16.paths import is_frozen
 from scenix16.storage.userdata import application_dir, default_userdata_dir
 from scenix16.ui.main_window import MainWindow
+from scenix16.ui.theme.fonts import load_fonts
 from scenix16.ui.theme.stylesheet import application_stylesheet
 
 SMOKE_TEST_FLAG = "--smoke-test"
@@ -23,6 +24,7 @@ def create_application(argv: list[str]) -> QApplication:
     )
     app = QApplication.instance() or QApplication(argv)
     app.setApplicationName("SceniX16")
+    load_fonts()  # polices locales du Design Book, avant la feuille de style
     app.setStyle("Fusion")
     app.setStyleSheet(application_stylesheet())
     return app
