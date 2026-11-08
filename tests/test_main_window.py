@@ -3,7 +3,8 @@
 from PySide6.QtGui import QColor, QPixmap
 
 from scenix16.paths import resource
-from scenix16.ui.main_window import LOGO_HEIGHT, MainWindow
+from scenix16.ui.main_window import MainWindow
+from scenix16.ui.shell.nav_rail import LOGO_HEIGHT
 from scenix16.ui.theme import tokens as t
 from scenix16.ui.theme.stylesheet import application_stylesheet
 
@@ -17,11 +18,13 @@ def make_window(qtbot, qapp):
     return window
 
 
-def test_default_logos_present(qapp):  # QPixmap exige une application Qt
-    for name in ("scenix16.png", "waiting-for-words.png"):
-        path = resource("logos", name)
-        assert path.is_file(), path
-        assert not QPixmap(str(path)).isNull()
+def test_default_logo_present_and_no_group_logo(qapp):  # QPixmap exige une application Qt
+    path = resource("logos", "scenix16.png")
+    assert path.is_file(), path
+    assert not QPixmap(str(path)).isNull()
+    # Q20 (Design Book v0.43) : aucun logo de groupe dans les ressources de l'application
+    assert sorted(p.name for p in resource("logos").iterdir()) == ["scenix16.png"]
+    assert not any("waiting" in p.name.lower() for p in resource().rglob("*"))
 
 
 def test_window_title_and_sizes(qtbot, qapp):

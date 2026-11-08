@@ -1,15 +1,22 @@
-"""Emplacement de concert (Design Book v0.40, section 06).
+"""Emplacement de concert (Design Book v0.42, section 06, D57, D63, D64).
 
 Carte associée à la touche de même numéro :
-- repère coloré en haut, à la couleur du groupe de la touche (1–4 rouge, …) ;
-- numéro et point lumineux ; nom (coupé avec « … ») ; salle sur une ligne ;
+- repère coloré en haut, à la couleur du groupe de la touche (1–4 rouge, …),
+  à 70 % au repos et 100 % au survol ;
+- numéro et point d'état plat ; nom (coupé avec « … ») ; salle sur une ligne ;
 - pied : « J-n » ou « Ce soir », puis l'étiquette d'état.
 
-États : prochain (bordure orange, point avec halo, étiquette orange) ;
-à venir (point allumé) ; aujourd'hui (comme prochain, point qui pulse,
-fixe si les animations sont réduites) ; INIT (transparente, pointillés,
-« INIT », inactive, sans focus). Anneau #F2E9DA : mise en évidence (couplage
-avec la touche) ou fiche ouverte ; anneau orange : focus clavier.
+États (D63) : normal (fond contenu, bordure line/soft) ; survol ou paire mise
+en évidence (fond relevé, bordure line, repère à 100 %, aucun anneau) ;
+sélectionnée, fiche ouverte (fond relevé, bordure fine à la couleur du groupe
+à 70 %) ; focus clavier (anneau orange en plus du survol). Prochain garde sa
+bordure orange ; aujourd'hui n'en a plus (D11, D63 v0.46). Tous deux ont un point
+cerclé fixe et une étiquette orange (« PROCHAIN », « AUJOURD'HUI »).
+Paire sélectionnée (D63, v0.45) : point d'état qui pulse lentement, commandé par la
+page (set_pulsing), fixe si les animations sont réduites. Pas de focus au clic
+(TabFocus) : l'anneau orange reste réservé au clavier. INIT : transparente, pointillés,
+« INIT », inactive, sans focus. Pas d'info-bulle : l'aperçu au survol (D64)
+la remplace ; son contenu est fourni comme description accessible.
 
 Le composant n'applique aucune règle métier : il affiche une DashboardKey.
 """
@@ -18,15 +25,18 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QEasingCurve, QPointF, QRectF, QSize, Qt, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QRadialGradient
+from PySide6.QtCore import QEasingCurve, QPointF, QRect, QRectF, QSize, Qt, QVariantAnimation, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QAbstractButton, QSizePolicy
 
 from scenix16.domain.dashboard import ConcertState, DashboardKey
 from scenix16.services.dashboard_service import STATE_TAGS, card_venue, countdown_label
+from shiboken6 import isValid
+
 from scenix16.ui.system import animations_enabled
 from scenix16.ui.theme import tokens as t
 from scenix16.ui.theme.fonts import LABEL_FAMILY, MONO_FAMILY
+from scenix16.ui.widgets.keyboard import fresh_activation, is_enter
 from scenix16.ui.widgets.step_key import GROUP_COLORS, PULSE_MIN, PULSE_MS
 
 RADIUS = 6
@@ -35,6 +45,9 @@ RING_OFFSET = 2
 RING_WIDTH = 2
 MARGIN = RING_OFFSET + RING_WIDTH
 MIN_HEIGHT = 104
+MARKER_REST = 0.70        # repère de groupe au repos ; 100 % au survol (D63)
+MARKER_INIT = 0.25
+DOT_RING_RADIUS = 6.75    # cercle d'état « prochain » / « aujourd'hui »
 
 
 def _font(family: str, px: int, weight=QFont.Weight.Normal, spacing: float = 0.0,
@@ -52,6 +65,8 @@ def _font(family: str, px: int, weight=QFont.Weight.Normal, spacing: float = 0.0
 class SlotCard(QAbstractButton):
     hover_changed = Signal(bool)
     focus_changed = Signal(bool)
+    navigate = Signal(int)           # ← (-1) / → (+1), D65
+    navigate_rows = Signal(int)      # ↑ (-1) / ↓ (+1), rangée voisine (D65)
 
     def __init__(self, number: int, group: int, parent=None):
         super().__init__(parent)
@@ -61,6 +76,7 @@ class SlotCard(QAbstractButton):
         self.selected = False
         self.highlighted = False
         self.pulsing = False
+        self.activated_by_keyboard = False     # dernière activation : Entrée (True) ou clic (False)
         self._dot_opacity = 1.0
         self._pulse = QVariantAnimation(self)
         self._pulse.setStartValue(0.0)
@@ -113,21 +129,30 @@ class SlotCard(QAbstractButton):
         self.setFocusPolicy(Qt.TabFocus if key is not None else Qt.NoFocus)
         if key is None:
             self.selected = self.highlighted = False
-            self.setToolTip("")
             self.setAccessibleName(f"Emplacement {self.number:02d} : libre (INIT)")
         else:
             c = key.concert
-            self.setToolTip(c.name)
             self.setAccessibleName(f"Emplacement {self.number:02d} : {c.name}")
+        self.setToolTip("")                       # remplacée par l'aperçu au survol (D64)
+        self.set_pulsing(False)                 # la page rétablit la pulsation de la paire sélectionnée
+        self.updateGeometry()
+        self.update()
+
+    def set_pulsing(self, on: bool, animations: bool | None = None) -> None:
+        """Pulsation du point d'état : paire sélectionnée seulement (D57, D63, v0.45)."""
+        if not isValid(self._pulse):              # fenêtre en cours de destruction (fermeture)
+            return
         if animations is None:
             animations = animations_enabled()
-        self.pulsing = key is not None and key.state is ConcertState.TODAY and animations
-        if self.pulsing:
+        pulsing = on and animations and not self.is_init
+        if pulsing == self.pulsing and (pulsing == self.pulse_running()):
+            return
+        self.pulsing = pulsing
+        if pulsing:
             self._pulse.start()
         else:
             self._pulse.stop()
             self._dot_opacity = 1.0
-        self.updateGeometry()
         self.update()
 
     def set_selected(self, selected: bool) -> None:
@@ -143,7 +168,19 @@ class SlotCard(QAbstractButton):
 
     def _on_pulse(self, value) -> None:
         self._dot_opacity = PULSE_MIN + (1 - PULSE_MIN) * (0.5 + 0.5 * math.cos(2 * math.pi * value))
-        self.update()
+        self.update(self.dot_rect())              # seul le point d'état est redessiné (2.8c)
+
+    def dot_center(self) -> QPointF:
+        """Centre du point d'état, en haut à droite de la carte."""
+        card = self.card_rect()
+        nh = QFontMetrics(self.number_font()).height()
+        return QPointF(card.right() - PAD_X - 6, card.top() + PAD_TOP + nh / 2)
+
+    def dot_rect(self) -> QRect:
+        """Zone redessinée par la pulsation : point et cercle d'état, marge d'anticrénelage."""
+        c = self.dot_center()
+        r = DOT_RING_RADIUS + 1.5 + 2
+        return QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r).toAlignedRect()
 
     # --- textes affichés ---------------------------------------------------
     def name_text(self) -> str:
@@ -197,10 +234,33 @@ class SlotCard(QAbstractButton):
         super().focusOutEvent(event)
 
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not self.is_init:
-            self.click()
+        """D65 : ← → carte active voisine (en continu entre banques), ↑ ↓ rangée voisine ;
+        Entrée et Espace ouvrent la fiche, une fois par appui (D69, 2.8b). Les flèches ne
+        suivent jamais l'ordre de tabulation (aucune fuite vers le tri ou les paramètres)."""
+        key = event.key()
+        if key in (Qt.Key_Left, Qt.Key_Right):
+            if not self.is_init:
+                self.navigate.emit(-1 if key == Qt.Key_Left else 1)
+            event.accept()
             return
+        if key in (Qt.Key_Up, Qt.Key_Down):
+            if not self.is_init:
+                self.navigate_rows.emit(-1 if key == Qt.Key_Up else 1)
+            event.accept()
+            return
+        if is_enter(event) and not self.is_init:
+            if fresh_activation(self, event):      # Entrée maintenue : une seule ouverture (D69)
+                self.activated_by_keyboard = True
+                self.click()
+            event.accept()
+            return
+        if key == Qt.Key_Space and not self.is_init and fresh_activation(self, event):
+            self.activated_by_keyboard = True      # Espace : même effet qu'Entrée
         super().keyPressEvent(event)
+
+    def mousePressEvent(self, event):
+        self.activated_by_keyboard = False
+        super().mousePressEvent(event)
 
     # --- dessin --------------------------------------------------------------
     def paintEvent(self, event):
@@ -209,37 +269,44 @@ class SlotCard(QAbstractButton):
         card = self.card_rect()
         group_color = QColor(GROUP_COLORS[self.group % 4])
         state = self.state
+        # image de pulsation : seule la zone du point est à redessiner, les textes sont inutiles (2.8c)
+        dot_only = not self.is_init and self.dot_rect().contains(event.rect())
         emphasized = state in (ConcertState.NEXT, ConcertState.TODAY)
 
-        # anneau : focus (orange) prioritaire, sinon mise en évidence / fiche ouverte
-        ring = None
+        raised = not self.is_init and (self.highlighted or self.selected)
+
+        # focus clavier : seul anneau de la carte (D63)
         if self.hasFocus() and not self.is_init:
-            ring = QColor(t.BRAND)
-        elif self.selected or self.highlighted:
-            ring = QColor(t.SILK)
-        if ring is not None:
             r = card.adjusted(-RING_OFFSET - RING_WIDTH / 2, -RING_OFFSET - RING_WIDTH / 2,
                               RING_OFFSET + RING_WIDTH / 2, RING_OFFSET + RING_WIDTH / 2)
-            p.setPen(QPen(ring, RING_WIDTH))
+            p.setPen(QPen(QColor(t.BRAND), RING_WIDTH))
             p.setBrush(Qt.NoBrush)
             p.drawRoundedRect(r, RADIUS + RING_OFFSET, RADIUS + RING_OFFSET)
 
-        # fond et bordure
+        # fond et bordure (D63)
         if self.is_init:
             pen = QPen(QColor(t.LINE_STRONG), 1, Qt.DashLine)
             p.setPen(pen)
             p.setBrush(Qt.NoBrush)
             p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), RADIUS, RADIUS)
         else:
-            p.setPen(QPen(QColor(t.BRAND if emphasized else t.LINE_SOFT), 2 if emphasized else 1))
-            p.setBrush(QColor(t.CELL))
-            inset = 1 if emphasized else 0.5
+            if state is ConcertState.NEXT:              # seule « Prochain » garde la bordure (v0.46)
+                border, width = QColor(t.BRAND), 2
+            elif self.selected:
+                border, width = QColor(group_color), 1
+                border.setAlphaF(0.70)
+            elif self.highlighted:
+                border, width = QColor(t.LINE), 1
+            else:
+                border, width = QColor(t.LINE_SOFT), 1
+            p.setPen(QPen(border, width))
+            p.setBrush(QColor(t.RAISED if raised else t.CELL))
+            inset = width / 2
             p.drawRoundedRect(card.adjusted(inset, inset, -inset, -inset), RADIUS, RADIUS)
 
-        # repère coloré du groupe (3 px, en haut, retrait de 10 px)
+        # repère coloré du groupe (3 px, en haut, retrait de 10 px) : 70 % au repos, 100 % au survol
         bar = QColor(group_color)
-        if self.is_init:
-            bar.setAlphaF(0.25)
+        bar.setAlphaF(MARKER_INIT if self.is_init else (1.0 if raised else MARKER_REST))
         p.setPen(Qt.NoPen)
         p.setBrush(bar)
         path = QPainterPath()
@@ -256,19 +323,23 @@ class SlotCard(QAbstractButton):
         nh = QFontMetrics(self.number_font()).height()
         p.drawText(QRectF(x, y, w, nh), Qt.AlignLeft | Qt.AlignVCenter, f"{self.number:02d}")
         if not self.is_init:
-            center = QPointF(x + w - 4, y + nh / 2)
-            if emphasized:
-                glow = QRadialGradient(center, 9)
-                glow.setColorAt(0.0, QColor(243, 4, 0, round(170 * self._dot_opacity)))
-                glow.setColorAt(1.0, QColor(243, 4, 0, 0))
-                p.setBrush(glow)
-                p.drawEllipse(center, 9, 9)
+            center = self.dot_center()
+            if emphasized:                               # point cerclé, sans lueur (D57)
+                ring_color = QColor(t.LED_ON)
+                ring_color.setAlphaF(self._dot_opacity)
+                p.setPen(QPen(ring_color, 1.5))
+                p.setBrush(Qt.NoBrush)
+                p.drawEllipse(center, DOT_RING_RADIUS, DOT_RING_RADIUS)
+                p.setPen(Qt.NoPen)
             on, off = QColor(t.LED_ON), QColor(t.LED_OFF)
             o = self._dot_opacity
             p.setBrush(QColor(round(off.red() + (on.red() - off.red()) * o),
                               round(off.green() + (on.green() - off.green()) * o),
                               round(off.blue() + (on.blue() - off.blue()) * o)))
             p.drawEllipse(center, 4, 4)
+        if dot_only:
+            p.end()
+            return
         y += nh + 4
 
         # nom (ou INIT)
@@ -304,7 +375,7 @@ class SlotCard(QAbstractButton):
             p.setBrush(QColor(t.BRAND))
             tag_color = QColor(t.INK)
         else:
-            p.setBrush(QColor(t.RAISED))
+            p.setBrush(QColor(t.LINE_SOFT if raised else t.RAISED))   # lisible sur fond relevé
             tag_color = QColor(t.TEXT)
         p.setPen(Qt.NoPen)
         p.drawRoundedRect(tag_rect, 3, 3)

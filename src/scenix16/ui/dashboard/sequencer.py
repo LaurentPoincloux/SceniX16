@@ -3,7 +3,8 @@
 Une seule rangée de 16 StepKey en 4 groupes de 4 (rouge, orange, jaune,
 blanc). Écart visuel de 8 px entre deux touches, de 20 px entre deux
 groupes. Largeur du corps calculée selon la place : bornée à 96 px ; sous
-44 px seulement tant que le rail n'est pas repliable (arbitrage A, jusqu'en 2.9).
+44 px seulement tant que le rail n'est pas repliable (arbitrage A ; barre repliée reportée
+après les phases 1 et 2, D58).
 La géométrie des colonnes est partagée avec la grille des emplacements, qui
 s'aligne dessus en 2 × 8.
 """
@@ -12,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from scenix16.domain.dashboard import BASE_KEYS, key_group
@@ -47,6 +48,10 @@ def key_columns(width: float) -> KeyColumns:
 
 
 class Sequencer(QWidget):
+    edge_reached = Signal(int)       # ← sur la première touche active (-1), → sur la dernière (+1)
+    card_requested = Signal(int)     # ↓ sur une touche : carte de même numéro (D65)
+    geometry_changed = Signal()      # colonnes recalculées (alignement des onglets)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("Sequencer")
@@ -55,6 +60,7 @@ class Sequencer(QWidget):
             key = StepKey(n, key_group(n), self)
             key.setMinimumSize(0, 0)          # taille imposée par la rangée (arbitrage A)
             key.navigate.connect(lambda delta, k=key: self.move_focus(k, delta))
+            key.down_requested.connect(lambda k=key: self.card_requested.emit(k.number))
             self.keys.append(key)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.columns = key_columns(800)
@@ -81,10 +87,14 @@ class Sequencer(QWidget):
             self.setFixedHeight(height)
         for key, left in zip(self.keys, self.columns.left):
             key.setGeometry(round(left - MARGIN), 0, round(body) + 2 * MARGIN, height)
+        self.geometry_changed.emit()
 
     # --- clavier (D9) --------------------------------------------------------
     def move_focus(self, key: StepKey, delta: int) -> None:
-        """Passe à la touche active suivante dans la direction donnée ; ignore les INIT."""
+        """Passe à la touche active suivante dans la direction donnée ; ignore les INIT.
+
+        Au bord de la rangée, la page décide du passage à la banque voisine (D46).
+        """
         index = self.keys.index(key) + delta
         while 0 <= index < len(self.keys):
             target = self.keys[index]
@@ -92,3 +102,13 @@ class Sequencer(QWidget):
                 target.setFocus()
                 return
             index += delta
+        self.edge_reached.emit(delta)
+
+    def focus_first(self, last: bool = False) -> bool:
+        """Focus sur la première (ou la dernière) touche active ; False s'il n'y en a pas."""
+        keys = reversed(self.keys) if last else self.keys
+        for key in keys:
+            if not key.is_init:
+                key.setFocus(Qt.TabFocusReason)
+                return True
+        return False

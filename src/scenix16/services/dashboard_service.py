@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
-from scenix16.domain.dashboard import DEFAULT_SORT, DashboardView, SortOrder, build_dashboard
+from scenix16.domain.dashboard import (DEFAULT_SORT, DashboardKey, DashboardView, SortOrder,
+                                       address, bank_label, build_dashboard, scenix16_day)
 from scenix16.storage.repository import count_tracks, read_concert_summaries
 from scenix16.storage.userdata import database_path
 
@@ -61,14 +62,31 @@ def plural(count: int, singular: str, plural_form: str) -> str:
     return f"{count} {singular if count <= 1 else plural_form}"
 
 
-def concerts_label(summary: DashboardSummary) -> str:
-    """Repère de la barre supérieure : « N à venir · M passés »."""
-    return f"{summary.upcoming} à venir · {plural(summary.past, 'passé', 'passés')}"
+@dataclass(frozen=True)
+class InfoReadout:
+    """Contenu de l'afficheur d'information de la barre supérieure (D60)."""
+
+    upcoming: str          # « 23 »
+    upcoming_label: str    # « À VENIR » (invariable)
+    past: str              # « 6 »
+    past_label: str        # « PASSÉ » / « PASSÉS »
+    date: str              # « 07/11/2026 », jour SceniX16
+    accessible: str        # « 23 concerts à venir, 6 passés, date de référence 7 novembre 2026 »
 
 
 def date_label(now: datetime) -> str:
-    """Date calendaire du jour (même entre minuit et 6 h)."""
-    return now.strftime("%d/%m/%Y")
+    """Date de référence du dashboard : le jour SceniX16 (D10, Q12) ; de 0 h à 5 h 59, la veille."""
+    return scenix16_day(now).strftime("%d/%m/%Y")
+
+
+def info_readout(summary: DashboardSummary, now: datetime) -> InfoReadout:
+    """Afficheur (D60) : compteurs d'abord, date de référence en retrait."""
+    day = scenix16_day(now)
+    upcoming, past = summary.upcoming, summary.past
+    accessible = (f"{plural(upcoming, 'concert', 'concerts')} à venir, {plural(past, 'passé', 'passés')}, "
+                  f"date de référence {day_month_year(day)}")
+    return InfoReadout(str(upcoming), "À VENIR", str(past), "PASSÉ" if past <= 1 else "PASSÉS",
+                       date_label(now), accessible)
 
 
 def countdown_label(days: int) -> str:
@@ -121,6 +139,87 @@ def empty_state_text(view: DashboardView | None) -> str:
         verb = "est conservée" if total <= 1 else "sont conservées"
         text += f" {joined[0].upper() + joined[1:]} {verb} dans SETLISTS."
     return text
+
+
+DAY_NAMES = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
+MONTH_NAMES = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+               "septembre", "octobre", "novembre", "décembre")
+
+
+def long_date(d: date) -> str:
+    """Date en toutes lettres, en français, sans dépendre de la langue du système.
+
+    « samedi 7 novembre 2026 », « mardi 1er décembre 2026 ».
+    """
+    return f"{DAY_NAMES[d.weekday()]} {day_month_year(d)}"
+
+
+def day_month_year(d: date) -> str:
+    """« 7 novembre 2026 », « 1er décembre 2026 » (sans le jour de la semaine)."""
+    day = "1er" if d.day == 1 else str(d.day)
+    return f"{day} {MONTH_NAMES[d.month - 1]} {d.year}"
+
+
+def tracks_label(count: int) -> str:
+    return plural(count, "titre", "titres")
+
+
+@dataclass(frozen=True)
+class PreviewContent:
+    """Contenu de l'aperçu au survol d'une paire (D64), par ordre d'importance."""
+
+    address: str          # « B03 »
+    tag: str              # « À VENIR », « PROCHAIN », « AUJOURD'HUI »
+    emphasized: bool      # prochain ou aujourd'hui
+    name: str             # nom complet, jamais tronqué
+    venue: str            # lieu complet, retours à la ligne conservés
+    date: str             # date en toutes lettres
+    countdown: str        # « Ce soir », « J-12 »
+    tracks: str           # « 18 titres »
+
+
+def preview_content(key: DashboardKey) -> PreviewContent:
+    c = key.concert
+    venue = (c.venue or "").replace("\r\n", "\n").strip()
+    return PreviewContent(
+        address=key.address,
+        tag=STATE_TAGS[key.state.value],
+        emphasized=key.state.value in ("next", "today"),
+        name=c.name,
+        venue=venue,
+        date=long_date(c.concert_date),
+        countdown=countdown_label(key.countdown),
+        tracks=tracks_label(c.track_count),
+    )
+
+
+def preview_description(key: DashboardKey) -> str:
+    """Description accessible d'une touche et d'une carte : le contenu complet de l'aperçu."""
+    p = preview_content(key)
+    venue = ", ".join(x.strip() for x in p.venue.split("\n") if x.strip())
+    parts = [f"{p.address}, {p.tag.capitalize()}.", f"{p.name}."]
+    if venue:
+        parts.append(f"{venue}.")
+    parts.append(f"{p.date}, {p.countdown}.")
+    parts.append(f"{p.tracks}.")
+    return " ".join(parts)
+
+
+def key_accessible_name(bank: int, position: int, key: DashboardKey | None) -> str:
+    where = address(bank, position)
+    return f"Touche {where} : {key.concert.name}" if key else f"Touche {where} : libre (INIT)"
+
+
+def slot_accessible_name(bank: int, position: int, key: DashboardKey | None) -> str:
+    where = address(bank, position)
+    return f"Emplacement {where} : {key.concert.name}" if key else f"Emplacement {where} : libre (INIT)"
+
+
+def bank_accessible_name(index: int, count: int) -> str:
+    """Nom accessible d'un onglet : « Banque B : 4 concerts » ou « Banque C : vide »."""
+    if count == 0:
+        return f"Banque {bank_label(index)} : vide"
+    return f"Banque {bank_label(index)} : {plural(count, 'concert', 'concerts')}"
 
 
 SORT_LABELS = {                       # D12 : mêmes mots sur le dashboard et dans SETLISTS

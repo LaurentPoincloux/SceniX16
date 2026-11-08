@@ -1,0 +1,38 @@
+SceniX16 — Licences et composants tiers
+=======================================
+
+SceniX16 utilise les polices et les composants ci-dessous. Les textes officiels
+complets de leurs licences se trouvent dans ce dossier LICENCES, placé à côté de
+l'exécutable, et dans l'application (Aide › À propos de SceniX16 › Licences et
+composants tiers).
+
+Polices (fournies sans modification, chargées localement)
+---------------------------------------------------------
+- Barlow Semi Condensed — © 2017 The Barlow Project Authors
+  SIL Open Font License 1.1 ............. Barlow-Semi-Condensed-OFL-1.1.txt
+- IBM Plex Mono — © 2017 IBM Corp., nom réservé « Plex »
+  SIL Open Font License 1.1 ............. IBM-Plex-Mono-OFL-1.1.txt
+
+Composants
+----------
+- Python 3.15.2 — Python Software Foundation License, avec les conditions des
+  composants intégrés à la distribution Windows (bzip2, libffi, OpenSSL…)
+  ....................................... Python-PSF-License.txt
+- Qt 6.12, PySide6 6.12.0 et shiboken6 6.12.0 — GNU Lesser General Public
+  License v3 (LGPL v3), qui complète la GNU General Public License v3
+  ....................................... LGPL-3.0.txt, GPL-3.0.txt
+  Les bibliothèques Qt, PySide6 et shiboken6 sont fournies sous forme de
+  fichiers séparés (dossier _internal de l'exécutable), remplaçables par
+  d'autres versions compatibles.
+  Code source : Qt — https://download.qt.io/official_releases/qt/
+                PySide6 et shiboken6 — https://download.qt.io/official_releases/QtForPython/
+- openpyxl 3.1.5 — licence MIT .......... openpyxl-MIT.txt
+- et_xmlfile 2.0.0 — licence MIT ........ et_xmlfile-MIT.txt
+  (avec la licence Python du code repris : et_xmlfile-Python-License.txt)
+- PyInstaller 6.22.3 (chargeur de l'exécutable) — GNU General Public License
+  v2 ou ultérieure, avec une exception qui autorise la distribution des
+  programmes fabriqués .................. PyInstaller-COPYING.txt
+
+Obligations de redistribution : vérifiées composant par composant avant chaque
+diffusion ; cette liste est tenue à jour à chaque changement de dépendance et
+contrôlée à chaque fabrication d'un exécutable distribuable.

@@ -55,6 +55,18 @@ FONT_MONO = ["IBM Plex Mono", "Cascadia Mono", "Consolas"]
 BRAND_INACTIVE_BG = "#2A1A12"
 BRAND_INACTIVE_BORDER = "#6A301A"
 
+# Boutons de banque ON/OFF (D67, révisé en v0.44)
+BANK_OFF_BG = "#16241B"       # éteint : vert sombre
+BANK_OFF_BORDER = "#2B4334"
+BANK_OFF_HOVER = "#1B2E22"
+BANK_OFF_TEXT = "#8DB89A"     # lettre vert grisé (contraste 7,3)
+BANK_ON_BG = "#3BB46A"        # allumé : vert lumineux
+BANK_ON_BORDER = "#4CC97C"
+BANK_ON_TEXT = INK            # lettre en encre (contraste 6,9)
+
+# Afficheur d'information (D60, couleur validée en v0.43)
+LCD_BG = "#0E0F10"
+
 # Dimensions (pixels effectifs)
 TOP_BAR_HEIGHT = 56
 RAIL_WIDTH = 208            # rail de navigation (section 07)

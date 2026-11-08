@@ -1,12 +1,9 @@
 """Séquence de démarrage : écriture, copie, instance unique, base."""
 
-from pathlib import Path
-
 import pytest
 
 from scenix16 import startup
 from scenix16.startup import Choice
-from scenix16.storage.instance_lock import InstanceLock
 
 
 class FakeUI:

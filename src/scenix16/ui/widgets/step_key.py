@@ -1,21 +1,24 @@
-"""Touche du step sequencer (Design Book v0.40, section 05).
+"""Touche du step sequencer (Design Book v0.42, section 05, D57, D63).
 
-Anatomie :
-1. corps : couleur historique du groupe en aplat, rayon 8 px, proportion 3:5 ;
-2. relief : liseré clair en haut, bande sombre en bas (unique effet de matière) ;
-3. voyant : 22 % de la largeur, dans le tiers haut ; éteint #5F1B13 en creux,
-   allumé #F30400 ;
-4. numéro : IBM Plex Mono, #151515 à 72 %, en bas de la touche.
+Anatomie (touches à plat, D57) :
+1. corps : couleur historique du groupe en aplat, rayon 8 px, proportion 3:5,
+   sans relief ni liseré ;
+2. point d'état plat : 22 % de la largeur, dans le tiers haut ; éteint
+   #5F1B13, allumé #F30400, sans lueur ;
+3. numéro : IBM Plex Mono, #151515 à 72 %, en bas de la touche.
 
-États (sections 05 et 06, D3, D8, D11) :
-- à venir : voyant allumé ;
-- prochain : voyant allumé avec halo ;
-- aujourd'hui : comme prochain, voyant qui pulse lentement (fixe si Windows
-  demande de réduire les animations) ;
+États (sections 05 et 06, D3, D8, D11, D63) :
+- à venir : point allumé ;
+- prochain et aujourd'hui : point allumé et cerclé, fixe (identifiant interne
+  Led.HALO ; D11 révisée en v0.45) ;
+- paire sélectionnée (D63, v0.45) : le point d'état pulse lentement (fixe si Windows
+  demande de réduire les animations) ; la page commande la pulsation (set_pulsing) ;
 - INIT (emplacement libre) : touche atténuée, inactive, sans survol ni focus ;
-- fiche ouverte : anneau #F2E9DA ; mise en évidence (survol de l'emplacement
-  associé) : même anneau ; focus clavier : anneau orange ;
-- survol : +6 % de luminosité ; pression : la touche s'enfonce d'1 px.
+- survol, ou paire mise en évidence depuis l'emplacement : +6 % de luminosité ;
+  appui : −5 % ; fiche ouverte : filet crème de 3 px sous la touche (2 px, dans l'anneau,
+  quand la touche a aussi le focus clavier) ;
+- focus clavier : anneau orange, seul anneau de la touche ; un clic à la souris ne
+  donne pas le focus (TabFocus, D8 précisée en v0.45), donc jamais l'anneau.
 
 Le composant ne décide d'aucune règle métier : il reçoit l'état calculé par
 le domaine (ConcertState) ou None pour un emplacement INIT.
@@ -26,14 +29,17 @@ from __future__ import annotations
 import math
 from enum import Enum
 
-from PySide6.QtCore import QEasingCurve, QPointF, QRectF, QSize, Qt, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QRadialGradient
+from PySide6.QtCore import QEasingCurve, QPointF, QRect, QRectF, QSize, Qt, QVariantAnimation, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QAbstractButton, QSizePolicy
 
 from scenix16.domain.dashboard import ConcertState
+from shiboken6 import isValid
+
 from scenix16.ui.system import animations_enabled
 from scenix16.ui.theme import tokens as t
 from scenix16.ui.theme.fonts import MONO_FAMILY
+from scenix16.ui.widgets.keyboard import fresh_activation, is_enter
 
 GROUP_COLORS = (t.KEY_RED, t.KEY_ORANGE, t.KEY_YELLOW, t.KEY_WHITE)
 
@@ -41,9 +47,14 @@ ASPECT = 5 / 3            # hauteur / largeur du corps (3:5)
 MIN_WIDTH = 44            # bornes de largeur du corps (section 08)
 MAX_WIDTH = 96
 RADIUS = 8
-RING_OFFSET = 3           # anneaux : 2 px, décalés de 3 px
+RING_OFFSET = 3           # anneau de focus : 2 px, décalé de 3 px
 RING_WIDTH = 2
-MARGIN = RING_OFFSET + RING_WIDTH   # place réservée autour du corps pour les anneaux
+MARGIN = RING_OFFSET + RING_WIDTH   # place réservée autour du corps (anneau, filet)
+UNDERLINE = 3             # filet crème « fiche ouverte » (D63)
+UNDERLINE_GAP = 2
+FOCUS_UNDERLINE = RING_OFFSET - RING_WIDTH / 2   # avec le focus : sous le corps, dans l'anneau (2 px)
+STATUS_RING_GAP = 2       # point cerclé (D57) : écart, puis cercle de 1,5 px
+STATUS_RING_WIDTH = 1.5
 LED_RATIO = 0.22
 LED_TOP = 0.12
 NUMBER_BOTTOM = 0.09
@@ -68,6 +79,7 @@ class StepKey(QAbstractButton):
     hover_changed = Signal(bool)     # survol (couplage avec l'emplacement)
     focus_changed = Signal(bool)     # focus clavier (couplage avec l'emplacement)
     navigate = Signal(int)           # ← (-1) / → (+1), D9
+    down_requested = Signal()        # ↓ : carte de même numéro (D65)
 
     def __init__(self, number: int, group: int, parent=None):
         super().__init__(parent)
@@ -79,6 +91,7 @@ class StepKey(QAbstractButton):
         self.selected = False
         self.highlighted = False
         self.hovered = False
+        self.activated_by_keyboard = False     # dernière activation : Entrée (True) ou clic (False)
         self._led_opacity = 1.0
         self._pulse = QVariantAnimation(self)
         self._pulse.setStartValue(0.0)
@@ -106,14 +119,27 @@ class StepKey(QAbstractButton):
         else:
             raise ValueError(f"État absent du dashboard : {state}")
         self.setEnabled(not self.is_init)
-        self.setFocusPolicy(Qt.NoFocus if self.is_init else Qt.StrongFocus)
+        self.setFocusPolicy(Qt.NoFocus if self.is_init else Qt.TabFocus)   # clic : pas de focus (v0.45)
         if self.is_init:
             self.hovered = self.highlighted = self.selected = False
-        want_pulse = state is ConcertState.TODAY
+        self.set_pulsing(False)                 # la page rétablit la pulsation de la paire sélectionnée
+        self.update()
+
+    def mousePressEvent(self, event):
+        self.activated_by_keyboard = False
+        super().mousePressEvent(event)
+
+    def set_pulsing(self, on: bool, animations: bool | None = None) -> None:
+        """Pulsation du point d'état : paire sélectionnée seulement (D57, D63, v0.45)."""
+        if not isValid(self._pulse):              # fenêtre en cours de destruction (fermeture)
+            return
         if animations is None:
             animations = animations_enabled()
-        self.pulsing = want_pulse and animations
-        if self.pulsing:
+        pulsing = on and animations and not self.is_init
+        if pulsing == self.pulsing and (pulsing == self.pulse_running()):
+            return
+        self.pulsing = pulsing
+        if pulsing:
             self._pulse.start()
         else:
             self._pulse.stop()
@@ -134,7 +160,19 @@ class StepKey(QAbstractButton):
     def _on_pulse(self, value) -> None:
         # 1 → PULSE_MIN → 1 sur une période (« ease-in-out » lissé par le cosinus)
         self._led_opacity = PULSE_MIN + (1 - PULSE_MIN) * (0.5 + 0.5 * math.cos(2 * math.pi * value))
-        self.update()
+        self.update(self.led_rect())              # seul le point d'état est redessiné (2.8c)
+
+    def led_geometry(self) -> tuple[QPointF, float]:
+        """Centre et diamètre du point d'état (D57)."""
+        body = self.body_rect()
+        d = body.width() * LED_RATIO
+        return QPointF(body.center().x(), body.top() + body.height() * LED_TOP + d / 2), d
+
+    def led_rect(self) -> QRect:
+        """Zone redessinée par la pulsation : point et cercle d'état, marge d'anticrénelage."""
+        center, d = self.led_geometry()
+        r = d / 2 + STATUS_RING_GAP + STATUS_RING_WIDTH + 2
+        return QRectF(center.x() - r, center.y() - r, 2 * r, 2 * r).toAlignedRect()
 
     # --- dimensions ------------------------------------------------------
     def hasHeightForWidth(self) -> bool:
@@ -160,7 +198,7 @@ class StepKey(QAbstractButton):
         w = min(max(w, 1), MAX_WIDTH)
         h = w * ASPECT
         x = (self.width() - w) / 2
-        y = (self.height() - h) / 2 + (1 if self.isDown() else 0)
+        y = (self.height() - h) / 2
         return QRectF(x, y, w, h)
 
     def number_font(self) -> QFont:
@@ -194,18 +232,26 @@ class StepKey(QAbstractButton):
         super().focusOutEvent(event)
 
     def keyPressEvent(self, event):
-        """D9 : ← → entre les touches actives ; Entrée / Espace ouvrent ; ↑ ↓ sans effet."""
+        """D9, D46, D65 : ← → entre les touches actives ; ↓ vers la carte de même numéro ;
+        ↑ sans effet ; Entrée et Espace ouvrent la fiche, une fois par appui (2.8b)."""
         key = event.key()
         if key == Qt.Key_Left:
             self.navigate.emit(-1)
         elif key == Qt.Key_Right:
             self.navigate.emit(1)
-        elif key in (Qt.Key_Return, Qt.Key_Enter):
-            if not self.is_init:
+        elif key == Qt.Key_Down:
+            self.down_requested.emit()
+            event.accept()
+        elif key == Qt.Key_Up:
+            event.accept()
+        elif is_enter(event):
+            if not self.is_init and fresh_activation(self, event):
+                self.activated_by_keyboard = True
                 self.click()
-        elif key in (Qt.Key_Up, Qt.Key_Down):
             event.accept()
         else:
+            if key == Qt.Key_Space and fresh_activation(self, event):
+                self.activated_by_keyboard = True      # Espace : même effet qu'Entrée (D69)
             super().keyPressEvent(event)   # Espace : comportement standard du bouton
 
     # --- dessin ------------------------------------------------------------
@@ -214,69 +260,61 @@ class StepKey(QAbstractButton):
         if self.is_init:   # atténuée : saturation × 0,25, luminosité × 0,55
             h, s, v, a = color.getHsvF()
             color = QColor.fromHsvF(max(h, 0), s * 0.25, v * 0.55, a)
-        elif self.hovered:
-            color = color.lighter(106)
+        elif self.isDown():
+            color = color.darker(105)                    # appui : −5 %
+        elif self.hovered or self.highlighted:
+            color = color.lighter(106)                   # survol ou paire : +6 % (D63)
         return color
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         body = self.body_rect()
+        # image de pulsation : seule la zone du point est à redessiner, le numéro est inutile (2.8c)
+        led_only = not self.is_init and self.led_rect().contains(event.rect())
 
-        # anneaux : focus clavier (orange) prioritaire, sinon fiche ouverte / mise en évidence
-        ring_color = None
+        # focus clavier : seul anneau de la touche (D63)
         if self.hasFocus() and not self.is_init:
-            ring_color = QColor(t.BRAND)
-        elif self.selected or self.highlighted:
-            ring_color = QColor(t.SILK)
-        if ring_color is not None:
             ring = body.adjusted(-RING_OFFSET - RING_WIDTH / 2, -RING_OFFSET - RING_WIDTH / 2,
                                  RING_OFFSET + RING_WIDTH / 2, RING_OFFSET + RING_WIDTH / 2)
-            p.setPen(QPen(ring_color, RING_WIDTH))
+            p.setPen(QPen(QColor(t.BRAND), RING_WIDTH))
             p.setBrush(Qt.NoBrush)
             p.drawRoundedRect(ring, RADIUS + RING_OFFSET, RADIUS + RING_OFFSET)
 
-        # corps
+        # corps à plat (D57)
         path = QPainterPath()
         path.addRoundedRect(body, RADIUS, RADIUS)
         p.setPen(Qt.NoPen)
         p.setBrush(self.body_color())
         p.drawPath(path)
 
-        # relief : bande sombre en bas, liseré clair en haut
-        p.save()
-        p.setClipPath(path)
-        band = 3 if self.isDown() else 6
-        p.setBrush(QColor(0, 0, 0, round(255 * (0.22 if self.isDown() else 0.18))))
-        p.drawRect(QRectF(body.left(), body.bottom() - band, body.width(), band))
-        if not self.isDown():
-            p.setBrush(QColor(255, 255, 255, round(255 * 0.35)))
-            p.drawRect(QRectF(body.left(), body.top(), body.width(), 1))
-        p.restore()
+        # fiche ouverte : filet crème sous la touche (D63). Avec le focus clavier, le filet est
+        # réduit et collé au corps, à l'intérieur de l'anneau, qu'il ne recouvre plus (2.9, C1).
+        if self.selected:
+            p.setBrush(QColor(t.SILK))
+            if self.hasFocus():
+                underline = QRectF(body.left() + RADIUS / 2, body.bottom(),
+                                   body.width() - RADIUS, FOCUS_UNDERLINE)
+            else:
+                underline = QRectF(body.left() + RADIUS / 2, body.bottom() + UNDERLINE_GAP,
+                                   body.width() - RADIUS, UNDERLINE)
+            p.drawRoundedRect(underline, 1, 1)
 
-        # voyant
-        d = body.width() * LED_RATIO
-        center = QPointF(body.center().x(), body.top() + body.height() * LED_TOP + d / 2)
+        # point d'état plat (D57)
+        center, d = self.led_geometry()
         if self.led is Led.OFF:
             p.setBrush(QColor(t.LED_OFF))
             p.drawEllipse(center, d / 2, d / 2)
-            p.setBrush(QColor(0, 0, 0, 110))       # creux : ombre interne en haut
-            p.save()
-            clip = QPainterPath()
-            clip.addEllipse(center, d / 2, d / 2)
-            p.setClipPath(clip)
-            p.drawEllipse(QPointF(center.x(), center.y() - d * 0.62), d / 2, d / 2)
-            p.restore()
         else:
             opacity = self._led_opacity
-            if self.led is Led.HALO:
-                glow = QRadialGradient(center, d * 1.4)
-                glow.setColorAt(0.0, QColor(243, 4, 0, round(140 * opacity)))
-                glow.setColorAt(1.0, QColor(243, 4, 0, 0))
-                p.setBrush(glow)
-                p.drawEllipse(center, d * 1.4, d * 1.4)
-                p.setBrush(QColor(243, 4, 0, round(46 * opacity)))   # anneau 2 px à 18 %
-                p.drawEllipse(center, d / 2 + 2, d / 2 + 2)
+            if self.led is Led.HALO:                     # « prochain » / « aujourd'hui » : cerclé
+                ring_color = QColor(t.LED_ON)
+                ring_color.setAlphaF(opacity)
+                radius = d / 2 + STATUS_RING_GAP + STATUS_RING_WIDTH / 2
+                p.setPen(QPen(ring_color, STATUS_RING_WIDTH))
+                p.setBrush(Qt.NoBrush)
+                p.drawEllipse(center, radius, radius)
+                p.setPen(Qt.NoPen)
             led = QColor(t.LED_OFF)
             on = QColor(t.LED_ON)
             led = QColor(
@@ -286,6 +324,10 @@ class StepKey(QAbstractButton):
             )
             p.setBrush(led)
             p.drawEllipse(center, d / 2, d / 2)
+
+        if led_only:
+            p.end()
+            return
 
         # numéro
         ink = QColor(t.INK)

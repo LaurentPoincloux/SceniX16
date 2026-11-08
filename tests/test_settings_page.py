@@ -66,7 +66,7 @@ def test_gear_opens_settings_and_back_button_returns(window, qtbot):
     assert window.pages.currentWidget() is window.main_page
     qtbot.mouseClick(window.gear_button, Qt.LeftButton)
     assert window.pages.currentWidget() is window.settings_page
-    assert window.settings_page.back_button.text() == "← MAIN"
+    assert window.settings_page.back_button.text() == "← CONCERTS"     # v0.48
     qtbot.mouseClick(window.settings_page.back_button, Qt.LeftButton)
     assert window.pages.currentWidget() is window.main_page
 

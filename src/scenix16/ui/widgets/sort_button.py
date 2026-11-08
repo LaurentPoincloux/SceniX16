@@ -8,11 +8,9 @@ sens : il émet clicked, et l'appelant lui renvoie le sens retenu (set_order).
 
 Hauteur 32 px, bordure line/strong, fond relevé au survol, anneau orange de
 2 px au focus clavier (section 09). Accessible par Tab ; Espace ou Entrée.
-Une pression maintenue sur Entrée ne produit qu'une seule activation : la
-répétition automatique du clavier est ignorée (Espace l'ignore déjà nativement).
-À traiter de façon transversale en 2.8 : les touches et les cartes (2.4)
-réagissent encore à la répétition d'Entrée ; leur comportement n'est pas
-modifié en 2.5.
+Une pression maintenue sur Entrée ou Espace ne produit qu'une seule activation :
+la répétition automatique du clavier est ignorée. Depuis 2.8b, cette règle est
+commune à tous les boutons de l'application (ui.widgets.keyboard).
 """
 
 from __future__ import annotations
@@ -25,6 +23,7 @@ from scenix16.domain.dashboard import DEFAULT_SORT, SortOrder
 from scenix16.services.dashboard_service import sort_accessible_name, sort_label
 from scenix16.ui.theme import tokens as t
 from scenix16.ui.theme.fonts import LABEL_FAMILY, MONO_FAMILY
+from scenix16.ui.widgets.keyboard import fresh_activation, is_enter
 
 BODY_HEIGHT = 32
 RADIUS = 5
@@ -101,8 +100,8 @@ class SortButton(QAbstractButton):
 
     # --- clavier ---------------------------------------------------------------
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-            if not event.isAutoRepeat():       # une pression maintenue = une seule activation
+        if is_enter(event):
+            if fresh_activation(self, event):  # une pression maintenue = une seule activation
                 self.click()
             event.accept()
         else:

@@ -10,7 +10,7 @@ from PySide6.QtGui import QColor
 from scenix16.importer.service import import_into_userdata
 from scenix16.storage.userdata import check_writable
 from scenix16.ui.main_window import MainWindow
-from scenix16.ui.shell.nav_rail import NEW_SETLIST_LABEL, NavItem
+from scenix16.ui.shell.nav_rail import NEW_SETLIST_LABEL
 from scenix16.ui.shell.status_line import StatusLine
 from scenix16.ui.theme import fonts, tokens as t
 from scenix16.ui.theme.stylesheet import application_stylesheet
@@ -43,30 +43,44 @@ def window(qtbot, qapp, userdata):
 def test_top_bar_height_and_order(window):
     bar = window.top_bar
     assert bar.height() == t.TOP_BAR_HEIGHT
-    xs = [w.mapTo(bar, w.rect().topLeft()).x()
-          for w in (bar.logo, bar.concerts_chip, bar.date_chip, bar.gear_button)]
-    assert xs == sorted(xs)                       # logo à gauche … engrenage à droite
+    xs = [w.mapTo(bar, w.rect().topLeft()).x() for w in (bar.menu_bar, bar.info, bar.gear_button)]
+    assert xs == sorted(xs)                       # menus à gauche … afficheur … engrenage à droite
     assert bar.gear_button.geometry().right() > bar.width() - 40
+    assert not hasattr(bar, "logo")               # D58 : le logo n'est plus dans la barre supérieure
 
 
-def test_top_bar_chips_are_compact_and_no_initial_focus_ring(window):
-    for chip in (window.top_bar.concerts_chip, window.top_bar.date_chip):
-        assert chip.height() < t.TOP_BAR_HEIGHT - 20          # pastilles, pas toute la hauteur
-        middle = chip.y() + chip.height() / 2
-        assert abs(middle - t.TOP_BAR_HEIGHT / 2) <= 1
+def test_info_display_geometry_and_no_initial_focus_ring(window):
+    info = window.top_bar.info
+    assert info.height() == 36                    # D60
+    middle = info.y() + info.height() / 2
+    assert abs(middle - t.TOP_BAR_HEIGHT / 2) <= 1
+    assert info.focusPolicy() == Qt.NoFocus
     assert not window.gear_button.hasFocus()
 
 
-def test_top_bar_markers(window):
-    assert window.top_bar.concerts_chip.text() == "0 à venir · 3 passés"
-    assert window.top_bar.date_chip.text() == "07/11/2026"
+def test_info_display_content(window):
+    r = window.top_bar.info.readout
+    assert (r.upcoming, r.upcoming_label, r.past, r.past_label, r.date) ==         ("0", "À VENIR", "3", "PASSÉS", "07/11/2026")
+    assert window.top_bar.info.accessibleName() ==         "0 concert à venir, 3 passés, date de référence 7 novembre 2026"
 
 
-def test_top_bar_markers_with_other_clock(qtbot, qapp, userdata):
+def test_info_display_uses_scenix16_day(qtbot, qapp, userdata):
     win = MainWindow(userdata, clock=lambda: datetime(2026, 6, 22, 2, 30))
     qtbot.addWidget(win)
-    assert win.top_bar.concerts_chip.text() == "1 à venir · 2 passés"   # Kiosque encore du jour
-    assert win.top_bar.date_chip.text() == "22/06/2026"                 # date calendaire
+    r = win.top_bar.info.readout
+    assert (r.upcoming, r.past) == ("1", "2")                     # Kiosque encore du jour
+    assert r.date == "21/06/2026"                                 # D60, Q12 : jour SceniX16, la veille
+
+
+def test_info_display_flat_panel_without_glow(window):
+    info = window.top_bar.info
+    image = info.grab().toImage()
+    colors = {QColor(image.pixel(x, y)).name() for x in range(image.width()) for y in range(image.height())}
+    assert t.LCD_BG.lower() in colors and t.SILK.lower() in colors
+    # ni vert ni lueur (les franges ClearType du texte, bleutées, ne comptent pas)
+    assert not any(QColor(c).green() > max(QColor(c).red(), QColor(c).blue()) + 40 for c in colors)
+    corner = QColor(image.pixel(4, info.height() // 2)).name()
+    assert corner == t.LCD_BG.lower()                                    # aplat, sans dégradé
 
 
 # --- rail ---------------------------------------------------------------------
@@ -74,10 +88,33 @@ def test_top_bar_markers_with_other_clock(qtbot, qapp, userdata):
 def test_rail_width_and_order(window):
     rail = window.rail
     assert rail.width() == t.RAIL_WIDTH
-    assert [i.text() for i in rail.items.values()] == ["MAIN", "OUTPUT", "TRACKS", "SETLISTS"]
+    assert [i.text() for i in rail.items.values()] == ["CONCERTS", "OUTPUT", "TRACKS", "SETLISTS"]   # v0.48
+    assert rail.items["main"].accessibleName() == "CONCERTS"                 # clé interne inchangée
     ys = [i.y() for i in rail.items.values()] + [rail.new_setlist.y()]
     assert ys == sorted(ys)                       # NEW SETLIST juste après SETLISTS
     assert rail.new_setlist.text() == NEW_SETLIST_LABEL
+
+
+def test_rail_logo_rule_and_menu_label(window):
+    rail = window.rail
+    assert window.logo is rail.logo and rail.logo.source_is_valid()
+    assert rail.logo.height() == 40                                    # D58 (v0.44)
+    assert rail.group_label.text() == "MENU"
+    ys = [w.mapTo(rail, w.rect().topLeft()).y() for w in (rail.logo, rail.rule, rail.group_label)]
+    assert ys == sorted(ys)                                            # logo, filet, puis MENU
+    assert rail.rule.height() == 1 and rail.rule.width() == rail.width()   # filet pleine largeur
+    left = rail.logo.mapTo(rail, rail.logo.rect().topLeft()).x()
+    right = rail.width() - (left + rail.logo.width())
+    assert abs(left - right) <= 1                                      # centré (D58, v0.44)
+    assert left >= 28 and right >= 28                                  # marges latérales ≈ 30 px
+    source = rail.logo._source
+    assert abs(rail.logo.width() - source.width() * 40 / source.height()) <= 1   # proportions
+    top = rail.logo.mapTo(rail, rail.logo.rect().topLeft()).y()
+    rule_y = rail.rule.mapTo(rail, rail.rule.rect().topLeft()).y()
+    assert top == 20 and rule_y - (top + rail.logo.height()) == 18     # 20 px au-dessus, 18 au-dessous
+    image = rail.grab().toImage()
+    y = rail.rule.mapTo(rail, rail.rule.rect().topLeft()).y()
+    assert QColor(image.pixel(rail.width() // 2, y)).name() == t.LINE_SOFT.lower()
 
 
 def test_main_active_on_dashboard(window):
@@ -201,4 +238,4 @@ def test_counts_refresh_when_returning_to_main(qtbot, qapp, tmp_path):
     import_into_userdata(WORKBOOK, ud)             # import fait depuis PARAMÈTRES
     win.show_main()
     assert win.status_line.texts()[1:] == ["37 titres au catalogue", "3 setlists"]
-    assert win.top_bar.concerts_chip.text() == "0 à venir · 3 passés"
+    assert (win.top_bar.info.readout.upcoming, win.top_bar.info.readout.past) == ("0", "3")

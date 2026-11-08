@@ -1,7 +1,7 @@
 """Écran PARAMÈTRES (squelette) avec la section DONNÉES.
 
 Design Book v0.40 : écran secondaire ouvert par l'icône d'engrenage de la
-barre supérieure ; retour par « ← MAIN » ou Échap (D38, D39). Les autres
+barre supérieure ; retour par « ← CONCERTS » ou Échap (D38, D39, v0.48). Les autres
 paramètres (logos, sauvegarde manuelle) arrivent en phase 6.
 
 Section DONNÉES (choix validés) : entrée discrète « Importer le classeur
@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from scenix16.importer.service import ImportFailed, ImportRefused, import_into_userdata
 from scenix16.storage import database
 from scenix16.storage.userdata import application_dir, database_path
+from scenix16.ui.widgets.keyboard import enable_enter_activation
 
 IMPORT_LABEL = "Importer le classeur Excel…"
 IMPORT_HINT = "Opération ponctuelle, destinée à initialiser une base vide."
@@ -67,9 +68,10 @@ class SettingsPage(QWidget):
 
         head = QHBoxLayout()
         head.setSpacing(16)
-        self.back_button = QPushButton("← MAIN")
+        self.back_button = QPushButton("← CONCERTS")   # Design Book v0.48 (écran interne : MAIN)
         self.back_button.setProperty("variant", "back")
         self.back_button.clicked.connect(self.back_requested)
+        self.back_button.setFocusPolicy(Qt.TabFocus)          # clic : pas de focus ni d'anneau (v0.45)
         title = QLabel("PARAMÈTRES", objectName="PageTitle")
         head.addWidget(self.back_button)
         head.addWidget(title)
@@ -86,6 +88,8 @@ class SettingsPage(QWidget):
         self.import_button = QPushButton(IMPORT_LABEL)
         self.import_button.setProperty("variant", "ghost")
         self.import_button.clicked.connect(self.run_import)
+        self.import_button.setFocusPolicy(Qt.TabFocus)
+        enable_enter_activation(self.back_button, self.import_button)   # Entrée = Espace (2.8b)
         self.import_hint = QLabel(IMPORT_HINT, objectName="HintLabel")
         self.import_hint.setWordWrap(True)
         row = QHBoxLayout()
@@ -99,6 +103,7 @@ class SettingsPage(QWidget):
         # Échap reproduit le bouton retour (D39)
         self._escape = QShortcut(QKeySequence(Qt.Key_Escape), self)
         self._escape.setContext(Qt.WidgetWithChildrenShortcut)
+        self._escape.setAutoRepeat(False)                     # Échap maintenue : un seul retour
         self._escape.activated.connect(self.back_requested)
 
     # --- état de l'entrée d'import -----------------------------------------

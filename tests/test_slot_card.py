@@ -40,6 +40,11 @@ def pixel(widget, x, y):
     return QColor(image.pixel(round(x * r), round(y * r)))
 
 
+def colors(widget):
+    image = widget.grab().toImage()
+    return {QColor(image.pixel(x, y)).name() for x in range(image.width()) for y in range(image.height())}
+
+
 def test_texts_and_tag(make_card):
     card = make_card(dkey(ConcertState.UPCOMING, countdown=12))
     assert card.name_text() == "Le Kiosque"
@@ -60,7 +65,22 @@ def test_emphasized_states(make_card, state, tag, foot):
     assert card.tag_text() == tag and card.foot_text() == foot
     c = card.card_rect()
     border = pixel(card, c.center().x(), c.bottom() - 1)
-    assert border.name() == t.BRAND.lower()                     # bordure orange
+    if state is ConcertState.NEXT:
+        assert border.name() == t.BRAND.lower()                 # « Prochain » : bordure orange
+    else:
+        assert border.name() != t.BRAND.lower()                 # « Aujourd'hui » : plus de bordure (v0.46)
+        assert pixel(card, c.center().x(), c.bottom() - 0.6).name() != t.BRAND.lower()
+    assert t.BRAND.lower() in colors(card)                      # étiquette orange conservée
+    assert card.state in (ConcertState.NEXT, ConcertState.TODAY)
+
+
+def test_today_card_neutral_border_but_ringed_dot(make_card):
+    today = make_card(dkey(ConcertState.TODAY, countdown=0))
+    upcoming = make_card(dkey(ConcertState.UPCOMING))
+    c = today.card_rect()
+    edge = (c.center().x(), c.bottom() - 0.6)
+    assert pixel(today, *edge).name() == pixel(upcoming, *edge).name()   # même bordure qu'une carte à venir
+    assert t.LED_ON.lower() in colors(today) and not today.pulse_running()   # point cerclé fixe
 
 
 def test_upcoming_border_is_neutral(make_card):
@@ -69,17 +89,38 @@ def test_upcoming_border_is_neutral(make_card):
     assert pixel(card, c.center().x(), c.bottom() - 0.6).name() != t.BRAND.lower()
 
 
+def blend(top, bottom, alpha):
+    a, b = QColor(top), QColor(bottom)
+    return tuple(round(x * alpha + y * (1 - alpha)) for x, y in
+                 ((a.red(), b.red()), (a.green(), b.green()), (a.blue(), b.blue())))
+
+
 @pytest.mark.parametrize("group", [0, 1, 2, 3])
 def test_group_marker_color(make_card, group):
+    """D63 : repère à 70 % au repos, à pleine intensité au survol ou en paire."""
+    from scenix16.ui.widgets.slot_card import MARKER_REST
     card = make_card(dkey(), group=group)
     c = card.card_rect()
+    rest = pixel(card, c.center().x(), c.top() + 1)
+    expected = blend(GROUP_COLORS[group], t.CELL, MARKER_REST)
+    assert all(abs(v - e) <= 3 for v, e in zip((rest.red(), rest.green(), rest.blue()), expected))
+    card.set_highlighted(True)
     assert pixel(card, c.center().x(), c.top() + 1).name() == GROUP_COLORS[group].lower()
 
 
-def test_today_pulse_or_fixed(make_card):
-    assert make_card(dkey(ConcertState.TODAY, countdown=0), animations=True).pulse_running()
-    fixed = make_card(dkey(ConcertState.TODAY, countdown=0), animations=False)
+def test_today_fixed_and_selection_pulses(make_card):
+    """D11, D63 (v0.45) : le jour ne pulse plus de lui-même ; la carte sélectionnée pulse."""
+    today = make_card(dkey(ConcertState.TODAY, countdown=0), animations=True)
+    assert not today.pulse_running()
+    upcoming = make_card(dkey(ConcertState.UPCOMING), animations=True)
+    upcoming.set_pulsing(True, animations=True)
+    assert upcoming.pulsing and upcoming.pulse_running()
+    fixed = make_card(dkey(ConcertState.UPCOMING), animations=False)
+    fixed.set_pulsing(True, animations=False)
     assert not fixed.pulse_running()
+    init = make_card(None)
+    init.set_pulsing(True, animations=True)
+    assert not init.pulse_running()
 
 
 def test_init_card(make_card, qtbot):
@@ -107,17 +148,28 @@ def test_active_card_click_and_tab_focus(make_card, qtbot):
     assert card.focusPolicy() == Qt.TabFocus
 
 
-def test_long_name_elided_with_full_tooltip(make_card):
+def test_long_name_elided_without_tooltip(make_card):
+    """D64 : plus d'info-bulle ; le nom complet est dans l'aperçu et la description accessible."""
     long_name = "Festival international des musiques synthétiques et électroniques"
     card = make_card(dkey(name=long_name), width=180)
-    assert card.toolTip() == long_name
+    assert card.toolTip() == ""
+    assert card.accessibleName().endswith(long_name)
 
 
-def test_highlight_ring(make_card):
+def test_states_raised_selected_no_cream_ring(make_card):
+    """D63 : survol = fond relevé ; sélection = fond relevé + bordure du groupe ; aucun anneau crème."""
     card = make_card(dkey())
-    card.set_highlighted(True)
     c = card.card_rect()
-    assert pixel(card, c.center().x(), c.top() - 3).name() == t.SILK.lower()
+    inside = (c.left() + 6, c.center().y())
+    assert pixel(card, *inside).name() == t.CELL.lower()
+    card.set_highlighted(True)
+    assert pixel(card, *inside).name() == t.RAISED.lower()
+    assert pixel(card, c.center().x(), c.top() - 3).name() != t.SILK.lower()
+    card.set_highlighted(False)
+    card.set_selected(True)
+    assert pixel(card, *inside).name() == t.RAISED.lower()
+    border = pixel(card, c.left() + 0.5, c.center().y())
+    assert border.red() > border.blue() + 40                         # bordure rouge du groupe 1
 
 
 def test_height_follows_fonts(make_card):

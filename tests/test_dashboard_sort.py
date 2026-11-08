@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QPoint, Qt
 
-from scenix16.domain.dashboard import ConcertState, SortOrder
+from scenix16.domain.dashboard import ConcertState, SortOrder, bank_label
 from scenix16.importer.service import import_into_userdata
 from scenix16.storage import preferences
 from scenix16.storage.database import connect
@@ -65,7 +65,20 @@ def open_window(qtbot, qapp, userdata, size=(1280, 800), animations=False):
 
 
 def key_names(page):
-    return [k.toolTip().split("\n")[0] for k in page.sequencer.keys if not k.is_init]
+    """Noms des touches actives, dans l'ordre affiché.
+
+    Depuis 2.6b (D64), l'info-bulle n'existe plus : le nom accessible « Touche A01 : Nom »
+    porte l'adresse et le nom. L'adresse est vérifiée (banque affichée + position de la
+    touche), puis le nom est renvoyé.
+    """
+    names = []
+    for key in page.sequencer.keys:
+        if key.is_init:
+            continue
+        label, name = key.accessibleName().split(" : ", 1)
+        assert label == f"Touche {bank_label(page.bank)}{key.number:02d}"
+        names.append(name)
+    return names
 
 
 # --- bouton dans la page ---------------------------------------------------------
@@ -127,10 +140,10 @@ def test_states_do_not_depend_on_order(qtbot, qapp, ud):
 
 def test_top_bar_and_indicator_unchanged_by_order(qtbot, qapp, ud):
     win = open_window(qtbot, qapp, ud)
-    chips = (win.top_bar.concerts_chip.text(), win.top_bar.date_chip.text())
+    chips = win.top_bar.info.readout
     indicator = (win.main_page.indicator.left.text(), win.main_page.indicator.link.text())
     win.toggle_sort()
-    assert (win.top_bar.concerts_chip.text(), win.top_bar.date_chip.text()) == chips
+    assert win.top_bar.info.readout == chips
     assert (win.main_page.indicator.left.text(), win.main_page.indicator.link.text()) == indicator
 
 

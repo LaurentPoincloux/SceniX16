@@ -11,7 +11,7 @@ from scenix16.domain.dashboard import ConcertState, build_dashboard
 from scenix16.domain.models import ConcertSummary, SetlistStatus
 from scenix16.importer.service import import_into_userdata
 from scenix16.storage.userdata import check_writable
-from scenix16.ui.dashboard.page import CONCERTS_TITLE, KEYS_TITLE, DashboardPage
+from scenix16.ui.dashboard.page import CONCERTS_TITLE, DashboardPage
 from scenix16.ui.dashboard.sequencer import GROUP_GAP, KEY_GAP, key_columns
 from scenix16.ui.dashboard.slot_grid import COMPACT_BELOW
 from scenix16.ui.main_window import MainWindow
@@ -71,7 +71,9 @@ def test_sixteen_keys_numbered_and_grouped(page):
     keys = page.sequencer.keys
     assert [k.number for k in keys] == list(range(1, 17))
     assert [k.group for k in keys] == [0] * 4 + [1] * 4 + [2] * 4 + [3] * 4
-    assert page.keys_title.text() == KEYS_TITLE and page.concerts_title.text() == CONCERTS_TITLE
+    # D62 : plus de titre au-dessus des touches ; la rangée est nommée pour les lecteurs d'écran
+    assert not hasattr(page, "keys_title") and page.concerts_title.text() == CONCERTS_TITLE
+    assert page.sequencer.accessibleName() == "Touches, banque A"
 
 
 def test_keys_reflect_domain_view(page):
@@ -82,7 +84,12 @@ def test_keys_reflect_domain_view(page):
 
 
 def test_key_tooltip_name_venue_date(page):
-    assert page.key(1).toolTip() == "Concert A\nParis\nAntipode\n07/11/2026"
+    # D45 (2.6) : adresse en tête de la première ligne, puis lieu et date
+    # D64 : l'aperçu remplace l'info-bulle ; même contenu en description accessible
+    assert page.key(1).toolTip() == "" and page.slot(1).toolTip() == ""
+    assert page.key(1).accessibleDescription() == \
+        "A01, Aujourd'hui. Concert A. Paris, Antipode. samedi 7 novembre 2026, Ce soir. 10 titres."
+    assert page.slot(1).accessibleDescription() == page.key(1).accessibleDescription()
 
 
 @pytest.mark.parametrize("width", [760, 1016, 1392, 1600])
@@ -171,6 +178,7 @@ def test_slot_group_colors(page):
 # --- couplage touche / emplacement ---------------------------------------------
 
 def test_hover_key_highlights_pair_once(page):
+    page.select_concert(None)                 # la paire 01 est présélectionnée (v0.45) : survol seul ici
     events = []
     page.slot(1).set_highlighted = (lambda orig: (lambda v: (events.append(v), orig(v))))(page.slot(1).set_highlighted)
     hover(page.key(1), True)
@@ -241,8 +249,9 @@ def test_arrows_skip_init_and_stop_at_ends(page, qtbot):
     qtbot.keyClick(page.key(3), Qt.Key_Left)
     assert page.key(2).hasFocus()
     qtbot.keyClick(page.key(2), Qt.Key_Up)
+    assert page.key(2).hasFocus()                                # ↑ sans effet
     qtbot.keyClick(page.key(2), Qt.Key_Down)
-    assert page.key(2).hasFocus()                                # ↑ ↓ sans effet
+    assert page.slot(2).hasFocus()                               # ↓ : carte de même numéro (D65, 2.8b)
 
 
 def test_enter_and_space_open(page, qtbot):
@@ -307,11 +316,17 @@ def test_setlists_link_inactive(page):
     assert link.focusPolicy() == Qt.NoFocus and not link.openExternalLinks()
 
 
-def test_overflow_keys_not_shown_before_2_6(page):
-    view = demo_view(extra=20)
+def test_concerts_beyond_sixteen_go_to_bank_b(page):
+    """Remplace le test de débordement d'avant 2.6 : les concerts 17 et suivants sont en banque B."""
+    view = demo_view(extra=20)                                     # 23 concerts à venir
     page.set_view(view)
-    assert len(view.overflow_keys) > 0
-    assert not any(k.is_init for k in page.sequencer.keys)        # 16 de base remplies
+    assert view.occupied_banks == 2 and len(view.bank(1)) == 7
+    assert page.bank == 0                                          # A affichée par défaut
+    assert not any(k.is_init for k in page.sequencer.keys)         # banque A remplie
+    assert page.indicator.left.text() == f"{view.upcoming_count} concerts à venir sur le dashboard"
+    assert page.select_bank(1)
+    assert [k.is_init for k in page.sequencer.keys] == [False] * 7 + [True] * 9
+    assert page.slot(1).name_text() == view.bank(1)[0].concert.name
     assert page.indicator.left.text() == f"{view.upcoming_count} concerts à venir sur le dashboard"
 
 
@@ -327,7 +342,7 @@ def test_short_window_scrolls_without_overlap(qtbot, qapp, view_factory):
     page = win.main_page
     page.set_view(view_factory())
     qtbot.wait(30)
-    blocks = [w for w in (page.keys_title, page.sequencer, page.concerts_title, page.slot_grid,
+    blocks = [w for w in (page.bank_tabs, page.sequencer, page.concerts_title, page.slot_grid,
                           page.indicator, page.empty_state) if w.isVisible()]
     spans = sorted((w.mapTo(page.content, w.rect().topLeft()).y(), w.height()) for w in blocks)
     for (top_a, h_a), (top_b, _) in zip(spans, spans[1:]):
@@ -359,7 +374,7 @@ def test_empty_state_above_init_grid_and_fully_visible_at_1280x800(qtbot, qapp):
     page = win.main_page
     page.set_view(None)
     qtbot.wait(30)
-    order = [page.keys_title, page.sequencer, page.concerts_title, page.empty_state, page.slot_grid]
+    order = [page.bank_tabs, page.sequencer, page.concerts_title, page.empty_state, page.slot_grid]
     tops = [_top(page, w) for w in order]
     assert tops == sorted(tops)
     assert _top(page, page.empty_state) + page.empty_state.height() <= _top(page, page.slot_grid)
@@ -376,7 +391,7 @@ def test_order_unchanged_when_concerts_present(qtbot, qapp):
     page.set_view(demo_view())
     qtbot.wait(30)
     assert not page.empty_state.isVisible()
-    order = [page.keys_title, page.sequencer, page.concerts_title, page.slot_grid, page.indicator]
+    order = [page.bank_tabs, page.sequencer, page.concerts_title, page.slot_grid, page.indicator]
     tops = [_top(page, w) for w in order]
     assert tops == sorted(tops)
     assert _top(page, page.slot_grid) + page.slot_grid.height() <= _top(page, page.indicator)

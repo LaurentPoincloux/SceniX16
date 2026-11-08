@@ -203,26 +203,28 @@ def test_identical_names_same_date_order_is_stable():
     assert [k.concert.id for k in view.keys] == [3, 9]
 
 
-# --- 16 touches de base, zone défilante (D22, D31, Q2) -----------------------
+# --- 16 touches par banque, classement continu (D22, D44, Q2) --------------------
 
 def many(n, start=date(2026, 12, 1)):
     return [concert(i, f"Concert {i:02d}", date.fromordinal(start.toordinal() + i))
             for i in range(1, n + 1)]
 
 
-def test_sixteen_base_keys_and_overflow_continuous():
+def test_sixteen_keys_per_bank_and_continuous_ranking():
+    """Remplace le test de la zone défilante (D31 retirée en v0.41) : banque B."""
     view = build_dashboard(many(20), datetime(2026, 11, 7, 12, 0))
-    assert len(view.base_keys) == 16 and len(view.overflow_keys) == 4
+    assert len(view.base_keys) == 16 and len(view.bank(1)) == 4
     assert [k.number for k in view.keys] == list(range(1, 21))
-    assert view.overflow_keys[0].concert.name == "Concert 17"
+    assert view.bank(1)[0].concert.name == "Concert 17"
+    assert view.bank(1)[0].address == "B01"
     assert view.free_slots == 0
-    assert {k.state for k in view.overflow_keys} <= {ConcertState.UPCOMING}
+    assert {k.state for k in view.bank(1)} <= {ConcertState.UPCOMING}
 
 
-def test_overflow_follows_reverse_order():
+def test_banks_follow_reverse_order():
     view = build_dashboard(many(20), datetime(2026, 11, 7, 12, 0), SortOrder.NEWEST_FIRST)
     assert view.keys[0].concert.name == "Concert 20"
-    assert view.overflow_keys[-1].concert.name == "Concert 01"
+    assert view.bank(1)[-1].concert.name == "Concert 01"
 
 
 def test_free_slots_when_fewer_than_sixteen():

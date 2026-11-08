@@ -1,4 +1,9 @@
-"""Fenêtres de dialogue du démarrage (implémentation Qt de StartupUI)."""
+"""Fenêtres de dialogue du démarrage (implémentation Qt de StartupUI).
+
+Écran de démarrage (2.8d, B4) : il est fermé définitivement avant toute boîte de démarrage
+(dossier non accessible, choix du dossier, échec de copie, redémarrage, instance déjà ouverte,
+échec du démarrage), pour ne jamais la recouvrir.
+"""
 
 from __future__ import annotations
 
@@ -64,11 +69,30 @@ class MessageDialog(QDialog):
         self.accept()
 
 
+STARTUP_FAILED_TITLE = "SceniX16 n'a pas pu démarrer"
+
+
+def startup_failed_text(step_name: str, report: Path | None) -> str:
+    text = f"Le démarrage s'est arrêté à l'étape « {step_name} ».\n\n"
+    if report is not None:
+        text += f"Un rapport technique a été enregistré dans :\n{report}\n\n"
+    else:
+        text += "Aucun rapport technique n'a pu être enregistré.\n\n"
+    return text + "Vous pouvez relancer SceniX16. Si le problème persiste, conservez ce rapport."
+
+
 class QtStartupUI:
-    def __init__(self):
+    def __init__(self, splash=None):
         self._busy = False
+        self.splash = splash
+
+    def _close_splash(self) -> None:
+        """B4 : l'écran de démarrage disparaît définitivement avant toute boîte."""
+        if self.splash is not None:
+            self.splash.dismiss()
 
     def storage_problem(self, check: WriteCheck, can_relocate: bool) -> Choice:
+        self._close_splash()
         text = (
             f"Windows interdit l'écriture dans ce dossier :\n{check.path}\n\n"
             "SceniX16 ne peut donc enregistrer ni données, ni paramètres, ni sauvegardes.\n\n"
@@ -90,6 +114,7 @@ class QtStartupUI:
         return dialog.result_value or Choice.QUIT
 
     def choose_parent_folder(self) -> Path | None:
+        self._close_splash()
         folder = QFileDialog.getExistingDirectory(
             None, "Choisir le dossier où copier SceniX16")
         return Path(folder) if folder else None
@@ -102,6 +127,7 @@ class QtStartupUI:
         self._busy = running
 
     def relocation_failed(self, error: RelocationError) -> None:
+        self._close_splash()
         text = str(error)
         if error.partial is not None:
             text += (f"\n\nUne copie partielle se trouve dans :\n{error.partial}\n"
@@ -112,6 +138,7 @@ class QtStartupUI:
                       [("OK", "secondary", None)], focus=0).exec()
 
     def offer_restart(self, result: RelocationResult) -> bool:
+        self._close_splash()
         dialog = MessageDialog(
             "Copie terminée et vérifiée",
             f"SceniX16 a été copié dans :\n{result.destination}\n\n"
@@ -124,9 +151,18 @@ class QtStartupUI:
         return bool(dialog.result_value)
 
     def already_running(self, userdata: Path) -> None:
+        self._close_splash()
         MessageDialog(
             "SceniX16 est déjà ouvert",
             "Une autre fenêtre SceniX16 utilise déjà ce dossier de données :\n"
             f"{userdata}\n\nCette deuxième ouverture est arrêtée pour protéger vos données.",
             [("OK", "secondary", None)], focus=0,
         ).exec()
+
+    def startup_failed(self, step_name: str, report: Path | None) -> None:
+        """Échec inattendu (B5) : message compréhensible ; le code de sortie est rendu par l'appelant."""
+        self._close_splash()
+        if self._busy:
+            self.copying(False)
+        MessageDialog(STARTUP_FAILED_TITLE, startup_failed_text(step_name, report),
+                      [("OK", "secondary", None)], focus=0).exec()

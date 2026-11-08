@@ -12,10 +12,15 @@ Ordre :
 3. verrou d'instance : si SceniX16 tourne déjà sur ce UserData, message et arrêt
    sans toucher aux données ;
 4. ouverture (ou création) de la base SQLite.
+
+Écran de démarrage (D72, 2.8d) : `progress`, facultatif, reçoit chaque étape réelle (Step) au
+moment où elle commence ; il n'a aucun effet sur la séquence. Si l'ouverture de la base échoue
+après la prise du verrou, le verrou est libéré avant de laisser remonter l'erreur.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -29,6 +34,16 @@ from scenix16.storage.userdata import WriteCheck, check_writable, database_path
 EXIT_QUIT = 0
 EXIT_ALREADY_RUNNING = 5
 EXIT_STORAGE = 3
+EXIT_STARTUP_ERROR = 4          # échec inattendu du démarrage (2.8d, P3)
+
+
+class Step(Enum):
+    """Étapes réelles du démarrage, dans l'ordre (2.8d)."""
+    STARTING = "starting"
+    STORAGE = "storage"
+    LOCK = "lock"
+    DATABASE = "database"
+    INTERFACE = "interface"
 
 
 class Choice(Enum):
@@ -54,7 +69,10 @@ class StartupOutcome:
     restart_from: Path | None = None   # dossier de la copie à lancer
 
 
-def prepare(app_dir: Path, userdata: Path, ui: StartupUI, can_relocate: bool) -> StartupOutcome:
+def prepare(app_dir: Path, userdata: Path, ui: StartupUI, can_relocate: bool,
+            progress: Callable[[Step], None] | None = None) -> StartupOutcome:
+    step = progress or (lambda _step: None)
+    step(Step.STORAGE)
     check = check_writable(userdata)
     while not check.writable:
         choice = ui.storage_problem(check, can_relocate)
@@ -75,11 +93,17 @@ def prepare(app_dir: Path, userdata: Path, ui: StartupUI, can_relocate: bool) ->
             return StartupOutcome(False, EXIT_QUIT, restart_from=result.destination)
         # copie conservée ; l'utilisateur peut choisir à nouveau ou quitter
 
+    step(Step.LOCK)
     lock = InstanceLock(userdata)
     if not lock.acquire():
         ui.already_running(userdata)
         return StartupOutcome(False, EXIT_ALREADY_RUNNING)
 
-    connection = database.connect(database_path(userdata))  # crée le schéma au besoin
-    connection.close()
+    step(Step.DATABASE)
+    try:
+        connection = database.connect(database_path(userdata))  # crée le schéma au besoin
+        connection.close()
+    except BaseException:
+        lock.release()                   # échec : le verrou ne reste jamais pris
+        raise
     return StartupOutcome(True, userdata=userdata, lock=lock)
