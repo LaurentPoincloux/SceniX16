@@ -53,7 +53,7 @@ Les versions sont figées dans `requirements.txt` et `requirements-dev.txt`. Ver
 | 2.8e | Barre de titre : barre native sombre (option A de D61) ; prototypes de barre personnalisée abandonnés pour cette version | Validé sous Windows 10 |
 | 2.9 | Corrections (filet crème et anneau de focus, tests sensibles au pointeur) et nouvelle présentation des infos pratiques de la fiche | Validé |
 
-Les incréments 2.6 à 2.9 sont validés et en attente de commit.
+Les incréments 2.6 à 2.9 sont validés et publiés sur GitHub.
 
 **Disponible aujourd'hui (depuis les sources) :**
 
@@ -65,6 +65,28 @@ Les incréments 2.6 à 2.9 sont validés et en attente de commit.
 - l'écran de démarrage, la barre de titre native sombre et le respect en direct du réglage Windows des animations.
 
 **Pas encore disponible :** l'édition des concerts et des setlists, SETLISTS, NEW SETLIST, TRACKS, OUTPUT et l'impression, les projets et les visuels, les sauvegardes, la localisation FR/EN, la barre latérale repliée (reportée : elle dépend de l'icône de l'application, Q16).
+
+## Screenshots
+
+Captures de la clôture des phases 1 et 2, réalisées sur des données fictives.
+
+**Écran CONCERTS** : 16 touches et 16 emplacements de la banque A, tri par date, concert du jour sélectionné.
+
+![Écran CONCERTS, banque A](docs/captures/phases-1-2/02-concerts-2x8-1440x900.png)
+
+**Banques de concerts** : banque B sélectionnée, emplacements libres en INIT, disposition compacte (1280 × 800).
+
+![Banque B en disposition compacte](docs/captures/phases-1-2/05-concerts-banque-B.png)
+
+**Fiche du concert** : setlist complète et infos pratiques dépliées (adresse, organisateur, notes, horaires, contacts).
+
+![Fiche du concert avec les infos pratiques](docs/captures/phases-1-2/08-fiche-A01-infos-pratiques-depliees.png)
+
+**Écran de démarrage** : version et étape réelle du démarrage.
+
+![Écran de démarrage](docs/captures/phases-1-2/01-ecran-de-demarrage.png)
+
+Les 11 captures de référence sont dans [`docs/captures/phases-1-2/`](docs/captures/phases-1-2/).
 
 ## Stockage local
 
